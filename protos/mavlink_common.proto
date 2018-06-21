@@ -1,6 +1,5 @@
 syntax = "proto2";
-
-package mavlink-common;
+//package mavlink-common
 
 /*
 <message id="0" name="HEARTBEAT">
@@ -95,6 +94,6 @@ message VfrHud {
 message MavlinkMessage {
   repeated Heartbeat heartbeat = 1;
   repeated Attitude attitude = 2;
-  repeated VfrHud vfr_hud = 2;
-  repeated GlobalPositionInt global_position_int = 2;
+  repeated VfrHud vfr_hud = 3;
+  repeated GlobalPositionInt global_position_int = 4;
 }
