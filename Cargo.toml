@@ -1,0 +1,12 @@
+[package]
+name = "mavlink2protobuf_service"
+version = "0.1.0"
+authors = ["Michal Podhradsky <mpodhradsky@galois.com>"]
+build = "build.rs"
+
+[build-dependencies]
+protobuf-codegen-pure = "2.0"
+
+[dependencies]
+mavlink = { path = "../rust-mavlink" }
+protobuf = "2.0"

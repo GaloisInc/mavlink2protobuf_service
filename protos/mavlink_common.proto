@@ -1,0 +1,100 @@
+syntax = "proto2";
+
+package mavlink-common;
+
+/*
+<message id="0" name="HEARTBEAT">
+     <description>The heartbeat message shows that a system is present and responding. The type of the MAV and Autopilot hardware allow the receiving system to treat further messages from this system appropriate (e.g. by laying out the user interface based on the autopilot).</description>
+     <field type="uint8_t" name="type">Type of the MAV (quadrotor, helicopter, etc., up to 15 types, defined in MAV_TYPE ENUM)</field>
+     <field type="uint8_t" name="autopilot">Autopilot type / class. defined in MAV_AUTOPILOT ENUM</field>
+     <field type="uint8_t" name="base_mode">System mode bitfield, see MAV_MODE_FLAG ENUM in mavlink/include/mavlink_types.h</field>
+     <field type="uint32_t" name="custom_mode">A bitfield for use for autopilot-specific flags.</field>
+     <field type="uint8_t" name="system_status">System status flag, see MAV_STATE ENUM</field>
+     <field type="uint8_t_mavlink_version" name="mavlink_version">MAVLink version, not writable by user, gets added by protocol because of magic data type: uint8_t_mavlink_version</field>
+</message>
+*/
+message Heartbeat {
+	required uint32 type = 1;// Enum
+  required uint32 autopilot = 2; // Enum
+	required uint32 base_mode = 3; // Enum
+	required uint32 custom_mode = 4; // bitfield
+	required uint32 system_status = 5; // Enum
+	required uint32 mavlink_version = 6; // Enum?
+}
+
+
+/*
+<message id="30" name="ATTITUDE">
+     <description>The attitude in the aeronautical frame (right-handed, Z-down, X-front, Y-right).</description>
+     <field type="uint32_t" name="time_boot_ms">Timestamp (milliseconds since system boot)</field>
+     <field type="float" name="roll">Roll angle (rad, -pi..+pi)</field>
+     <field type="float" name="pitch">Pitch angle (rad, -pi..+pi)</field>
+     <field type="float" name="yaw">Yaw angle (rad, -pi..+pi)</field>
+     <field type="float" name="rollspeed">Roll angular speed (rad/s)</field>
+     <field type="float" name="pitchspeed">Pitch angular speed (rad/s)</field>
+     <field type="float" name="yawspeed">Yaw angular speed (rad/s)</field>
+</message>
+*/
+message Attitude {
+  required uint32 time_boot_ms = 1;
+  required float roll = 2;
+  required float pitch = 3;
+  required float yaw = 4;
+  required float rollspeed = 5;
+  required float pitchspeed = 6;
+  required float yawspeed = 7;
+}
+
+/*
+<message id="33" name="GLOBAL_POSITION_INT">
+     <description>The filtered global position (e.g. fused GPS and accelerometers). The position is in GPS-frame (right-handed, Z-up). It
+     is designed as scaled integer message since the resolution of float is not sufficient.</description>
+     <field type="uint32_t" name="time_boot_ms">Timestamp (milliseconds since system boot)</field>
+     <field type="int32_t" name="lat">Latitude, expressed as * 1E7</field>
+     <field type="int32_t" name="lon">Longitude, expressed as * 1E7</field>
+     <field type="int32_t" name="alt">Altitude in meters, expressed as * 1000 (millimeters), AMSL (not WGS84 - note that virtually all GPS modules provide the AMSL as well)</field>
+     <field type="int32_t" name="relative_alt">Altitude above ground in meters, expressed as * 1000 (millimeters)</field>
+     <field type="int16_t" name="vx">Ground X Speed (Latitude), expressed as m/s * 100</field>
+     <field type="int16_t" name="vy">Ground Y Speed (Longitude), expressed as m/s * 100</field>
+     <field type="int16_t" name="vz">Ground Z Speed (Altitude), expressed as m/s * 100</field>
+     <field type="uint16_t" name="hdg">Compass heading in degrees * 100, 0.0..359.99 degrees. If unknown, set to: UINT16_MAX</field>
+</message>
+*/
+message GlobalPositionInt {
+  required uint32 time_boot_ms = 1;
+  required int32 lat = 2;
+  required int32 lon = 3;
+  required int32 alt = 4;
+  required int32 relative_alt = 5;
+  required int32 vx = 6;
+  required int32 vy = 7;
+  required int32 vz = 8;
+  required uint32 hdg = 9;
+}
+
+/*
+<message id="74" name="VFR_HUD">
+     <description>Metrics typically displayed on a HUD for fixed wing aircraft</description>
+     <field type="float" name="airspeed">Current airspeed in m/s</field>
+     <field type="float" name="groundspeed">Current ground speed in m/s</field>
+     <field type="int16_t" name="heading">Current heading in degrees, in compass units (0..360, 0=north)</field>
+     <field type="uint16_t" name="throttle">Current throttle setting in integer percent, 0 to 100</field>
+     <field type="float" name="alt">Current altitude (MSL), in meters</field>
+     <field type="float" name="climb">Current climb rate in meters/second</field>
+</message>
+*/
+message VfrHud {
+  required float airspeed = 1;
+  required float groundspeed = 2;
+  required int32 heading = 3;
+  required uint32 throttle = 4;
+  required float alt = 5;
+  required float climn = 6;
+}
+
+message MavlinkMessage {
+  repeated Heartbeat heartbeat = 1;
+  repeated Attitude attitude = 2;
+  repeated VfrHud vfr_hud = 2;
+  repeated GlobalPositionInt global_position_int = 2;
+}
