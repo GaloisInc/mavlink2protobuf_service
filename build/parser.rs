@@ -497,6 +497,10 @@ pub fn generate_protobuf<R: Read, W: Write>(input: &mut R, output: &mut W) {
     writeln!(output, "message MavlinkMessage {{");
     let mut msg_cnt = 1;
     for item in &profile.messages {
+        if msg_cnt > 4 {
+            writeln!(output, "}}\n");
+            return;
+        }
         writeln!(output, "  // id: {} {}", item.id, item.name);
         let msg_name = item.name
             .split("_")
@@ -541,7 +545,7 @@ pub fn generate_protobuf<R: Read, W: Write>(input: &mut R, output: &mut W) {
         writeln!(output, "  }}");
         writeln!(
             output,
-            "  repeated {} {} = {};\n",
+            "  optional {} {} = {};\n",
             msg_name,
             msg_name.to_lowercase(),
             msg_cnt

@@ -1,7 +1,9 @@
 extern crate byteorder;
 extern crate crc16;
+
+//extern crate protobuf_codegen_pure;
+extern crate protoc_rust;
 extern crate xml;
-extern crate protobuf_codegen_pure;
 
 mod parser;
 
@@ -28,7 +30,8 @@ pub fn main() {
     // Generate rust protobuf implementation
     let src_dir = env::current_dir().unwrap();
     let in_path = Path::new(&src_dir).join("protos");
-    protobuf_codegen_pure::run(protobuf_codegen_pure::Args {
+    //protobuf_codegen_pure::run(protobuf_codegen_pure::Args {
+    protoc_rust::run(protoc_rust::Args {
         out_dir: &in_path.to_string_lossy(),
         input: &[
             &Path::new(&src_dir)
@@ -36,11 +39,21 @@ pub fn main() {
                 .to_string_lossy(),
         ],
         includes: &[&in_path.to_string_lossy()],
-        customize: protobuf_codegen_pure::Customize { ..Default::default() },
+        //customize: protobuf_codegen_pure::Customize {
+        customize: protoc_rust::Customize {
+            serde_derive: Some(true),
+            //carllerche_bytes_for_bytes: Some(true),
+            //carllerche_bytes_for_string: Some(true),
+            ..Default::default()
+        },
     }).expect("protoc");
 
-    let _cmd = Command::new("mv").arg("protos/mavlink_common.rs").arg("src/mavlink_common_gpb.rs").output().expect("command failed");
-    
+    let _cmd = Command::new("mv")
+        .arg("protos/mavlink_common.rs")
+        .arg("src/mavlink_common_gpb.rs")
+        .output()
+        .expect("command failed");
+
     // Generate mavlink<->protobuf conversion
     /*
     let src_dir = env::current_dir().unwrap();
@@ -52,5 +65,4 @@ pub fn main() {
     let mut outf = File::create(&dest_path).unwrap();
 
     parser::generate_connector(&mut inf, &mut outf);
-    */
-}
+    */}
