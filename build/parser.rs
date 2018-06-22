@@ -478,8 +478,17 @@ pub fn generate_protobuf<R: Read, W: Write>(input: &mut R, output: &mut W) {
             .join("");
 
         writeln!(output, "enum {} {{", enum_name);
+        
+        // add values for enums that don't have any value specified
+        let sum = item.entries.iter().map(|x| x.value).fold(0, |mut sum, x| {sum += x; sum});
+        let mut cnt = 0;
         for entry in &item.entries {
-            writeln!(output, "  {} = {};", entry.name, entry.value);
+            if sum == 0 {
+                writeln!(output, "  {} = {};", entry.name, cnt);
+                cnt += 1;
+            } else {
+                writeln!(output, "  {} = {};", entry.name, entry.value);    
+            }
         }
         writeln!(output, "}}\n");
     }
@@ -559,6 +568,32 @@ fn mavtype2protobuf(input: &MavType) -> String {
     };
     String::from(s)
 }
+
+#[allow(unused_must_use)] // TODO fix
+pub fn generate_connector<R: Read, W: Write>(input: &mut R, output: &mut W) {
+    let profile = parse_profile(input);
+    writeln!(output, "
+    use mavlink_common_gpb::MavlinkMessage;
+    use mavlink::common::*;
+    pub fn mavlink2protobuf(msg: MavMessage) -> MavlinkMessage {{
+        MavlinkMessage::new()
+    }}
+
+    pub fn protobuf2mavlink(msg: MavlinkMessage) -> MavMessage {{
+        let data = MavMessage::HEARTBEAT_DATA {{
+            custom_mode: 11,
+            mavtype: 12,
+            autopilot: 13,
+            base_mode: 14,
+            system_status: 15,
+            mavlink_version: 16,
+        }};
+        MavMessage::HEARTBEAT(data)
+    }}");
+    
+}
+
+
 
 #[allow(unused_must_use)] // TODO fix
 pub fn generate_mod<R: Read, W: Write>(input: &mut R, output: &mut W) {

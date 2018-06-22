@@ -11,7 +11,10 @@ use mavlink::common::*;
 use std::io::prelude::*;
 use std::net::TcpStream;
 
-fn main(){
+mod mavlink_common_gpb;
+mod mavlink_connector;
+
+fn main() {
     let args: Vec<_> = env::args().collect();
 
     if args.len() < 2 {
@@ -21,7 +24,6 @@ fn main(){
 
     let vehicle = Arc::new(mavlink::connect(&args[1]).unwrap());
     //let mut stream = Arc::new(TcpStream::connect("127.0.0.1:34254").unwrap());
-    
 
     // Transmit thread
     /*
@@ -33,17 +35,27 @@ fn main(){
         }
     });
     */
-    
+
     // Receive thread
+    /*
     thread::spawn({
         let vehicle = vehicle.clone();
         //let stream = stream.clone();
         move || loop {
             if let Ok(msg) = vehicle.recv() {
-                let protomsg = mavlink2protobuf(msg);
-                let mavmsg = protobuf2mavlink(protomsg);
-                println!("{:?}",msg);
+                let protomsg = mavlink_connector::mavlink2protobuf(msg);
+                let mavmsg = mavlink_connector::protobuf2mavlink(protomsg);
+                println!("{:?}",mavmsg);
             }
         }
     });
+    */
+    loop {
+        if let Ok(msg) = vehicle.recv() {
+            let protomsg = mavlink_connector::mavlink2protobuf(msg);
+            println!("{:?}", protomsg);
+            let mavmsg = mavlink_connector::protobuf2mavlink(protomsg);
+            println!("{:?}", mavmsg);
+        }
+    }
 }

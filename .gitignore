@@ -12,4 +12,8 @@ Cargo.lock
 .cproject
 .project
 .settings/*
+
 protos/*
+src/mavlink_common.rs
+src/mavlink_common_gpb.rs
+src/mavlink_connector.rs
