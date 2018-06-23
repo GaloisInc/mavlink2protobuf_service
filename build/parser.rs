@@ -494,14 +494,9 @@ pub fn generate_protobuf<R: Read, W: Write>(input: &mut R, output: &mut W) {
     }
 
     // generate Messages
-    writeln!(output, "message MavlinkMessage {{");
     let mut msg_cnt = 1;
     for item in &profile.messages {
-        if msg_cnt > 4 {
-            writeln!(output, "}}\n");
-            return;
-        }
-        writeln!(output, "  // id: {} {}", item.id, item.name);
+        writeln!(output, "// id: {} {}", item.id, item.name);
         let msg_name = item.name
             .split("_")
             .map(|x| x.to_lowercase())
@@ -513,8 +508,9 @@ pub fn generate_protobuf<R: Read, W: Write>(input: &mut R, output: &mut W) {
             .collect::<Vec<String>>()
             .join("");
 
-        writeln!(output, "  message {} {{", msg_name);
-        let mut cnt = 1;
+        writeln!(output, "message {} {{", msg_name);
+        writeln!(output, "  required uint32 msg_id = 1;");
+        let mut cnt = 2;
         for field in &item.fields {
             match field.enumtype {
                 Some(ref enumtype) => {
@@ -528,12 +524,12 @@ pub fn generate_protobuf<R: Read, W: Write>(input: &mut R, output: &mut W) {
                         })
                         .collect::<Vec<String>>()
                         .join("");
-                    writeln!(output, "    required {} {} = {};", enumtype, field.name, cnt);
+                    writeln!(output, "  required {} {} = {};", enumtype, field.name, cnt);
                 }
                 None => {
                     writeln!(
                         output,
-                        "    required {} {} = {};",
+                        "  required {} {} = {};",
                         mavtype2protobuf(&field.mavtype),
                         field.name,
                         cnt
@@ -542,16 +538,14 @@ pub fn generate_protobuf<R: Read, W: Write>(input: &mut R, output: &mut W) {
             }
             cnt += 1;
         }
-        writeln!(output, "  }}");
-        writeln!(
-            output,
-            "  optional {} {} = {};\n",
-            msg_name,
-            msg_name.to_lowercase(),
-            msg_cnt
-        );
+        writeln!(output, "}}\n");
         msg_cnt += 1;
     }
+
+    // generate the big message
+    writeln!(output, "message MavlinkMessage {{");
+    writeln!(output, "  required uint32 msg_id = 1;");
+    writeln!(output, "  required bytes msg_data = 2;");
     writeln!(output, "}}\n");
 }
 

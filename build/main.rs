@@ -41,7 +41,7 @@ pub fn main() {
         includes: &[&in_path.to_string_lossy()],
         //customize: protobuf_codegen_pure::Customize {
         customize: protoc_rust::Customize {
-            serde_derive: Some(true),
+            //serde_derive: Some(true),
             //carllerche_bytes_for_bytes: Some(true),
             //carllerche_bytes_for_string: Some(true),
             ..Default::default()
