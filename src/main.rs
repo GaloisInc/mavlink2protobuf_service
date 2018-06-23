@@ -1,14 +1,6 @@
-#[macro_use]
-extern crate serde_derive;
-
-extern crate serde;
-extern crate serde_json;
-
 extern crate mavlink;
 extern crate protobuf;
 extern crate protobuf_serde;
-
-//extern crate bytes;
 
 use std::env;
 use std::sync::Arc;
@@ -21,7 +13,7 @@ use std::io::prelude::*;
 use std::net::TcpStream;
 
 mod mavlink_common_gpb;
-//mod mavlink_connector;
+mod mavlink_connector;
 
 use protobuf::Message;
 
