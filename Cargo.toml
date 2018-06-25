@@ -8,21 +8,24 @@ build = "build/main.rs"
 crc16 = "0.3.3"
 byteorder = "0.5.3"
 xml-rs = "0.2"
+protoc-rust = "2.0"
 
-[build-dependencies.protoc-rust]
-git = "https://github.com/stepancheg/rust-protobuf"
-branch = "master"
+#[build-dependencies.protoc-rust]
+#git = "https://github.com/stepancheg/rust-protobuf"
+#branch = "master"
 
 [dependencies]
 mavlink = { path = "../rust-mavlink" }
 crc16 = "0.3.3"
 byteorder = "0.5.3"
 xml-rs = "0.2"
+zmq = "0.8"
+protobuf = "2.0"
 
-[dependencies.protobuf]
-git = "https://github.com/stepancheg/rust-protobuf"
-branch = "master"
+#[dependencies.protobuf]
+#git = "https://github.com/stepancheg/rust-protobuf"
+#branch = "master"
 
-[dependencies.protobuf-serde]
-git = "https://github.com/stepancheg/rust-protobuf"
-branch = "master"
+#[dependencies.protobuf-serde]
+#git = "https://github.com/stepancheg/rust-protobuf"
+#branch = "master"

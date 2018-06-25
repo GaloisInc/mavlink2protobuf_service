@@ -30,7 +30,6 @@ pub fn main() {
     // Generate rust protobuf implementation
     let src_dir = env::current_dir().unwrap();
     let in_path = Path::new(&src_dir).join("protos");
-    //protobuf_codegen_pure::run(protobuf_codegen_pure::Args {
     protoc_rust::run(protoc_rust::Args {
         out_dir: &in_path.to_string_lossy(),
         input: &[
@@ -39,30 +38,25 @@ pub fn main() {
                 .to_string_lossy(),
         ],
         includes: &[&in_path.to_string_lossy()],
-        //customize: protobuf_codegen_pure::Customize {
         customize: protoc_rust::Customize {
-            //serde_derive: Some(true),
-            //carllerche_bytes_for_bytes: Some(true),
-            //carllerche_bytes_for_string: Some(true),
             ..Default::default()
         },
     }).expect("protoc");
 
     let _cmd = Command::new("mv")
         .arg("protos/mavlink_common.rs")
-        .arg("src/mavlink_common_gpb.rs")
+        .arg("src/mavlink_connector/mavlink_common_proto.rs")
         .output()
         .expect("command failed");
 
     // Generate mavlink<->protobuf conversion
-    /*
     let src_dir = env::current_dir().unwrap();
     let in_path = Path::new(&src_dir).join("common.xml");
     let mut inf = File::open(&in_path).unwrap();
 
     let src_dir = env::current_dir().unwrap();
-    let dest_path = Path::new(&src_dir).join("src/mavlink_connector.rs");
+    let dest_path = Path::new(&src_dir).join("src/mavlink_connector/mod.rs");
     let mut outf = File::create(&dest_path).unwrap();
 
     parser::generate_connector(&mut inf, &mut outf);
-    */}
+}
