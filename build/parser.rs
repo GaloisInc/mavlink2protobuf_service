@@ -108,39 +108,31 @@ impl Default for MavMessage {
 }
 
 impl MavMessage {
+    fn emit_struct_name(&self) -> Tokens {
+        let name = Ident::from(format!("{}_DATA", self.name));
+        quote!(#name)
+    }
     fn emit_rust(&self) -> Tokens {
-        let msg_name = Ident::from(format!("{}_DATA", self.name));
+        let msg_name = self.emit_struct_name();
         let field_names = self
             .fields
             .iter()
-            .map(|d| {
-                let (field_name, ..) = d.emit_tokens();
-                field_name
-            })
+            .map(|field| field.emit_name())
             .collect::<Vec<Tokens>>();
         let field_types = self
             .fields
             .iter()
-            .map(|d| {
-                let (_, field_type, ..) = d.emit_tokens();
-                field_type
-            })
+            .map(|field| field.emit_type())
             .collect::<Vec<Tokens>>();
         let readers = self
             .fields
             .iter()
-            .map(|d| {
-                let (_, _, reader, _) = d.emit_tokens();
-                reader
-            })
+            .map(|field| field.emit_reader())
             .collect::<Vec<Tokens>>();
         let writers = self
             .fields
             .iter()
-            .map(|d| {
-                let (.., writer) = d.emit_tokens();
-                writer
-            })
+            .map(|field| field.emit_writer())
             .collect::<Vec<Tokens>>();
         quote!{
             #[derive(Clone, Debug)]
@@ -362,84 +354,113 @@ impl Default for MavField {
 }
 
 impl MavField {
-    /// return (#name, #type, #reader, #writer)
-    fn emit_tokens(&self) -> (Tokens, Tokens, Tokens, Tokens) {
+    fn emit_name(&self) -> Tokens {
         let name;
         if self.name == "type" {
             name = "mavtype";
         } else {
             name = &self.name;
         }
-        let name = Ident::from(name.clone());
-        let mavtype = Ident::from(self.mavtype.rust_type());
+        let name = Ident::from(name);
+        quote!(#name)
+    }
 
-        let mut reader = quote!();
+    fn emit_type(&self) -> Tokens {
+        let mavtype = Ident::from(self.mavtype.rust_type());
+        quote!(#mavtype)
+    }
+
+    fn emit_writer(&self) -> Tokens {
+        let name = self.emit_name();
         let mut writer = quote!();
         match self.mavtype {
             MavType::Char | MavType::UInt8 | MavType::Int8 | MavType::UInt8MavlinkVersion => {
-                let read = Ident::from(format!("read_{}", self.mavtype.rust_type()));
-                reader = quote!{
-                    #name : cur. #read ().unwrap(),
-                };
                 let write = Ident::from(format!("write_{}", self.mavtype.rust_type()));
                 writer = quote!{
                     wtr.#write(self.#name).unwrap();
                 };
             }
             MavType::Array(ref t, size) => {
-                for _ in 0..size {
+                for idx in 0..size {
                     match *t.clone() {
                         MavType::Char
                         | MavType::UInt8
                         | MavType::Int8
                         | MavType::UInt8MavlinkVersion => {
-                            let read = Ident::from(format!("read_{}", t.rust_type()));
-                            reader.append(quote!{
-                                //#name : cur. #read ().unwrap(),
-                                #name: vec![],
-                            });
                             let write = Ident::from(format!("write_{}", t.rust_type()));
+                            let index = Ident::from(idx.to_string());
                             writer.append(quote!{
-                                    wtr.#write(self.#name[0]).unwrap();
+                                    wtr.#write(self.#name[#index]).unwrap();
                             });
-                            break;
                         }
                         MavType::Array(_, _) => {
                             panic!("error");
                         }
                         _ => {
-                            let read = Ident::from(format!("read_{}", t.rust_type()));
-                            reader.append(quote!{
-                                //#name : cur. #read::<LittleEndian> ().unwrap(),
-                                #name: vec![];
-                            });
                             let write = Ident::from(format!("write_{}", t.rust_type()));
+                            let index = Ident::from(idx.to_string());
                             writer.append(quote!{
-                                wtr.#write::<LittleEndian>(self.#name[0]).unwrap();
+                                wtr.#write::<LittleEndian>(self.#name[#index]).unwrap();
                             });
-                            break;
                         }
                     }
                 }
             }
             _ => {
-                let read = Ident::from(format!("read_{}", self.mavtype.rust_type()));
-                reader = quote!{
-                    #name : cur. #read::<LittleEndian> ().unwrap(),
-                };
                 let write = Ident::from(format!("write_{}", self.mavtype.rust_type()));
                 writer = quote!{
                     wtr.#write::<LittleEndian>(self.#name).unwrap();
                 };
             }
         }
+        quote!(#writer)
+    }
 
-        (
-            quote!(#name),
-            quote!(#mavtype),
-            quote!(#reader),
-            quote!(#writer),
-        )
+    fn emit_reader(&self) -> Tokens {
+        let name = self.emit_name();
+        let reader;
+        match self.mavtype {
+            MavType::Char | MavType::UInt8 | MavType::Int8 | MavType::UInt8MavlinkVersion => {
+                let read = Ident::from(format!("read_{}", self.mavtype.rust_type()));
+                reader = quote!{
+                    #name : cur. #read ().unwrap(),
+                };
+            }
+            MavType::Array(ref t, size) => {
+                let read;
+                match *t.clone() {
+                    MavType::Char
+                    | MavType::UInt8
+                    | MavType::Int8
+                    | MavType::UInt8MavlinkVersion => {
+                        read = Ident::from(format!("read_{}", t.rust_type()));
+                    }
+                    MavType::Array(_, _) => {
+                        panic!("error parsing message field");
+                    }
+                    _ => {
+                        read = Ident::from(format!("read_{}::<LittleEndian>", t.rust_type()));
+                    }
+                }
+                let size = Ident::from(size.to_string());
+                reader = quote!{
+                    #name: {
+                        let mut v = Vec::with_capacity(#size);
+                        for _ in 0..#size {
+                            v.push(cur.#read().unwrap());
+                        }
+                        v
+                    },
+                };
+            }
+            _ => {
+                let read = Ident::from(format!("read_{}", self.mavtype.rust_type()));
+                reader = quote!{
+                    #name : cur. #read::<LittleEndian> ().unwrap(),
+                };
+            }
+        }
+        quote!(#reader)
     }
 }
 
@@ -532,14 +553,78 @@ impl MavProfile {
         let comment = Ident::from(format!(
             "// This file was automatically generated, do not edit \n"
         ));
-        /*
         let msgs = self
             .messages
             .iter()
             .map(|d| d.emit_rust())
             .collect::<Vec<Tokens>>();
-            */
+
+        let enum_names = self
+            .messages
+            .iter()
+            .map(|msg| {
+                let name = Ident::from(msg.name.clone());
+                quote!(#name)
+            })
+            .collect::<Vec<Tokens>>();
+
+        let struct_names = self
+            .messages
+            .iter()
+            .map(|msg| msg.emit_struct_name())
+            .collect::<Vec<Tokens>>();
+
+        let msg_ids = self
+            .messages
+            .iter()
+            .map(|msg| {
+                let id = Ident::from(msg.id.to_string());
+                quote!(#id)
+            })
+            .collect::<Vec<Tokens>>();
+
+        let msg_crc = self
+            .messages
+            .iter()
+            .map(|msg| {
+                let crc = Ident::from(extra_crc(&msg).to_string());
+                quote!(#crc)
+            })
+            .collect::<Vec<Tokens>>();
+        /*
         let msgs = self.messages[4].emit_rust();
+        let enum_names = { let name = Ident::from(self.messages[4].name.clone()); quote!(#name) };
+        let struct_names = self.messages[4].emit_struct_name();
+        */
+        /*
+        //// test
+        let mut msgs = vec![];
+        let mut enum_names = vec![];
+        let mut struct_names = vec![];
+        let mut msg_ids = vec![];
+        let mut msg_crc = vec![];
+        for idx in 0..5 {
+            msgs.push(self.messages[idx].emit_rust());
+            enum_names.push({
+                let name = Ident::from(self.messages[idx].name.clone());
+                quote!(#name)
+            });
+            struct_names.push(self.messages[idx].emit_struct_name());
+            msg_ids.push({
+                let id = Ident::from(self.messages[idx].id.to_string());
+                quote!(#id)
+            });
+            msg_crc.push({let crc = Ident::from(extra_crc(&self.messages[idx]).to_string()); quote!(#crc)});
+        }
+        ///// test
+        */
+
+        let mav_message = self.emit_mav_message(enum_names.clone(), struct_names.clone());
+        let mav_message_parse =
+            self.emit_mav_message_parse(enum_names.clone(), struct_names, msg_ids.clone());
+        let mav_message_id = self.emit_mav_message_id(enum_names.clone(), msg_ids.clone());
+        let mav_message_serialize = self.emit_mav_message_serialize(enum_names);
+
         quote!{
             #comment
             use std::io::Cursor;
@@ -550,8 +635,65 @@ impl MavProfile {
                 fn serialize(&self) -> Vec<u8>;
             }
 
-            //#(#msgs)*
-            #msgs
+            #(#msgs)*
+            #mav_message
+
+            impl MavMessage {
+                #mav_message_parse
+                #mav_message_id
+                #mav_message_serialize
+                pub fn extra_crc(id: u8) -> u8 {
+                    match id {
+                        #(#msg_ids => #msg_crc,)*
+                        _ => 0,
+                    }
+                }
+            }
+        }
+    }
+
+    fn emit_mav_message(&self, enums: Vec<Tokens>, structs: Vec<Tokens>) -> Tokens {
+        quote!{
+            #[derive(Clone, Debug)]
+                pub enum MavMessage {
+                    #(#enums(#structs)),*
+                }
+        }
+    }
+
+    fn emit_mav_message_parse(
+        &self,
+        enums: Vec<Tokens>,
+        structs: Vec<Tokens>,
+        ids: Vec<Tokens>,
+    ) -> Tokens {
+        quote!{
+            pub fn parse(id: u8, payload: &[u8]) -> Option<MavMessage> {
+                match id {
+                    #(#ids => Some(MavMessage::#enums(#structs::parse(payload))),)*
+                    _ => None,
+                }
+            }
+        }
+    }
+
+    fn emit_mav_message_id(&self, enums: Vec<Tokens>, ids: Vec<Tokens>) -> Tokens {
+        quote!{
+            pub fn message_id(&self) -> u8 {
+                match self {
+                    #(MavMessage::#enums(..) => #ids,)*
+                }
+            }
+        }
+    }
+
+    fn emit_mav_message_serialize(&self, enums: Vec<Tokens>) -> Tokens {
+        quote!{
+            pub fn serialize(&self) -> Vec<u8> {
+                match self {
+                    #(&MavMessage::#enums(ref body) => body.serialize(),)*
+                }
+            }
         }
     }
 }
@@ -750,11 +892,11 @@ pub fn generate<R: Read, W: Write>(input: &mut R, output_proto: &mut W, output_r
     // mavlink.rs
     let rust_tokens = profile.emit_rust();
     //writeln!(output_rust, "{}", rust_tokens);
+
     let rust_src = rust_tokens.into_string();
     let mut cfg = rustfmt::config::Config::default();
     cfg.set().write_mode(rustfmt::config::WriteMode::Display);
     rustfmt::format_input(rustfmt::Input::Text(rust_src), &cfg, Some(output_rust)).unwrap();
-    
 }
 
 pub fn extra_crc(msg: &MavMessage) -> u8 {
@@ -799,12 +941,7 @@ fn mavtype_parser(input: &MavType, field_name: &str) -> String {
             MavType::Char | MavType::UInt8 => format!("data.{}.into()", field_name),
             MavType::Int8 => format!("serialize_vec_i8(data.{})", field_name),
             _ => panic!("Unknown format: {:?}", boxed_type),
-        }, /*
-        MavType::Array(boxed_type, _) => match &std::boxed::Box<MavType>::into_raw(boxed_type) {
-            MavType::Float => format!("serialize_vec_f32(data.{})", field_name),
-            _ => panic!("Unknown format: {:?}", boxed_type),
         },
-        */
     };
     String::from(s)
 }
@@ -977,7 +1114,7 @@ inner.set_mavtype(data.mavtype.into());
 }}"
     );
 }
-
+/*
 #[allow(unused_must_use)] // TODO fix
 pub fn generate_mod<R: Read, W: Write>(input: &mut R, output: &mut W) {
     let profile = parse_profile(input);
@@ -1198,4 +1335,4 @@ pub fn generate_mod<R: Read, W: Write>(input: &mut R, output: &mut W) {
     writeln!(output, "    }}");
     writeln!(output, "}}");
     writeln!(output, "");
-}
+}*/

@@ -7,6 +7,10 @@ extern crate byteorder; // 1.2.3
 //use mavlink::common::*;
 //use protobuf::Message;
 
+#[allow(non_camel_case_types)]
+#[allow(non_snake_case)]
+#[allow(unused_variables)]
+//#[allow(unused_mut)]
 mod mavlink_common;
 
 use mavlink_common::*;
