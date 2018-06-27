@@ -1,3 +1,4 @@
+//extern crate protobuf;
 extern crate mavlink_proto;
 
 use std::sync::Arc;
@@ -14,7 +15,7 @@ fn main() {
     }
 
     let vehicle = Arc::new(mavlink_proto::connect(&args[1]).unwrap());
-    
+/*    
     vehicle.send(&mavlink_proto::request_parameters()).unwrap();
     vehicle.send(&mavlink_proto::request_stream()).unwrap();
 
@@ -27,7 +28,7 @@ fn main() {
             }
         }
     });
-
+*/
     loop {
         if let Ok(msg) = vehicle.recv() {
             println!("{:?}", msg);

@@ -1,9 +1,8 @@
-//#![feature(extern_prelude)]
+#![recursion_limit="128"]
 #[macro_use]
 extern crate quote;
 extern crate byteorder;
 extern crate crc16;
-extern crate protoc_rust;
 extern crate rustfmt;
 extern crate xml;
 
