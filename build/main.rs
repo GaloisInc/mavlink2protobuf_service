@@ -39,5 +39,5 @@ pub fn main() {
         .expect("command failed");
 
     let mut outf = File::create(&dest_path_proto).unwrap();
-    outf.write(&cmd.stdout);
+    outf.write(&cmd.stdout).unwrap();
 }

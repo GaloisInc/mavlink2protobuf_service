@@ -90,7 +90,7 @@ pub fn write<W: Write>(w: &mut W, header: Header, data: &MavMessage) -> io::Resu
 
     Ok(())
 }
-/*
+
 /// Create a heartbeat message
 pub fn heartbeat_message() -> common::MavMessage {
     common::MavMessage::HEARTBEAT(common::HEARTBEAT_DATA {
@@ -160,4 +160,3 @@ mod test_message {
     }
     
 }
-*/

@@ -6,6 +6,8 @@ use std::thread;
 use std::env;
 use std::time::Duration;
 
+use mavlink_proto::common::*;
+
 fn main() {
     let args: Vec<_> = env::args().collect();
 
@@ -15,7 +17,7 @@ fn main() {
     }
 
     let vehicle = Arc::new(mavlink_proto::connect(&args[1]).unwrap());
-/*    
+
     vehicle.send(&mavlink_proto::request_parameters()).unwrap();
     vehicle.send(&mavlink_proto::request_stream()).unwrap();
 
@@ -28,10 +30,20 @@ fn main() {
             }
         }
     });
-*/
+
     loop {
         if let Ok(msg) = vehicle.recv() {
-            println!("{:?}", msg);
+            //println!("{:?}", msg);
+            match msg {
+                MavMessage::SYS_STATUS(data) => {
+                    println!("{:?}", data);
+                    let v = data.write_to_protostream().unwrap();
+                    println!("v.len={}",v.len());
+                }
+                _ => {}
+            }
+            
+            
         } else {
             break;
         }
