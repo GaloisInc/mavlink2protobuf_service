@@ -1,5 +1,5 @@
 [package]
-name = "mavlink2protobuf_service"
+name = "mavlink_proto"
 version = "0.1.0"
 authors = ["Michal Podhradsky <mpodhradsky@galois.com>"]
 build = "build/main.rs"
@@ -12,10 +12,10 @@ protoc-rust = "2.0"
 quote = "0.3"
 rustfmt = "0.9"
 
+[[bin]]
+name = "mavlink-connector"
+
 [dependencies]
-#mavlink = { path = "../rust-mavlink" }
-#crc16 = "0.3.3"
+crc16 = "0.3.3"
 byteorder = "0.5.3"
-#xml-rs = "0.2"
-#zmq = "0.8"
-#protobuf = "2.0"
+serial="0.4"

@@ -114,23 +114,20 @@ impl MavMessage {
     }
     fn emit_rust(&self) -> Tokens {
         let msg_name = self.emit_struct_name();
-        let field_names = self
-            .fields
+        
+        let field_names = self.fields
             .iter()
             .map(|field| field.emit_name())
             .collect::<Vec<Tokens>>();
-        let field_types = self
-            .fields
+        let field_types = self.fields
             .iter()
             .map(|field| field.emit_type())
             .collect::<Vec<Tokens>>();
-        let readers = self
-            .fields
+        let readers = self.fields
             .iter()
             .map(|field| field.emit_reader())
             .collect::<Vec<Tokens>>();
-        let writers = self
-            .fields
+        let writers = self.fields
             .iter()
             .map(|field| field.emit_writer())
             .collect::<Vec<Tokens>>();
@@ -859,7 +856,9 @@ pub fn parse_profile(file: &mut Read) -> MavProfile {
                     }
                     Some(&MavXmlElement::Message) => {
                         // println!("message: {:?}", message);
-                        profile.messages.push(message.clone());
+                        let mut msg = message.clone();
+                        msg.fields.sort_by(|a, b| a.mavtype.compare(&b.mavtype));
+                        profile.messages.push(msg);
                     }
                     Some(&MavXmlElement::Enum) => {
                         profile.enums.push(mavenum.clone());
@@ -1114,7 +1113,7 @@ inner.set_mavtype(data.mavtype.into());
 }}"
     );
 }
-/*
+
 #[allow(unused_must_use)] // TODO fix
 pub fn generate_mod<R: Read, W: Write>(input: &mut R, output: &mut W) {
     let profile = parse_profile(input);
@@ -1335,4 +1334,4 @@ pub fn generate_mod<R: Read, W: Write>(input: &mut R, output: &mut W) {
     writeln!(output, "    }}");
     writeln!(output, "}}");
     writeln!(output, "");
-}*/
+}

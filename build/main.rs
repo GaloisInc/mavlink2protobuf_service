@@ -1,4 +1,4 @@
-#![feature(extern_prelude)]
+//#![feature(extern_prelude)]
 #[macro_use]
 extern crate quote;
 extern crate byteorder;
@@ -27,8 +27,8 @@ pub fn main() {
     let dest_path_proto = Path::new(&src_dir).join("protos/mavlink_common.proto");
     let mut protof = File::create(&dest_path_proto).unwrap();
 
-    let src_dir = env::current_dir().unwrap();
-    let dest_path_rust = Path::new(&src_dir).join("src/mavlink_common.rs");
+    let out_dir = env::var("OUT_DIR").unwrap();
+    let dest_path_rust = Path::new(&out_dir).join("common.rs");
     let mut rustf = File::create(&dest_path_rust).unwrap();
 
     parser::generate(&mut inf, &mut protof, &mut rustf);
