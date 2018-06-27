@@ -108,6 +108,63 @@ impl Default for MavMessage {
 }
 
 impl MavMessage {
+    fn emit_rust(&self) -> Tokens {
+        let msg_name = Ident::from(format!("{}_DATA", self.name));
+        let field_names = self
+            .fields
+            .iter()
+            .map(|d| {
+                let (field_name, ..) = d.emit_tokens();
+                field_name
+            })
+            .collect::<Vec<Tokens>>();
+        let field_types = self
+            .fields
+            .iter()
+            .map(|d| {
+                let (_, field_type, ..) = d.emit_tokens();
+                field_type
+            })
+            .collect::<Vec<Tokens>>();
+        let readers = self
+            .fields
+            .iter()
+            .map(|d| {
+                let (_, _, reader, _) = d.emit_tokens();
+                reader
+            })
+            .collect::<Vec<Tokens>>();
+        let writers = self
+            .fields
+            .iter()
+            .map(|d| {
+                let (.., writer) = d.emit_tokens();
+                writer
+            })
+            .collect::<Vec<Tokens>>();
+        quote!{
+            #[derive(Clone, Debug)]
+            pub struct #msg_name {
+                #(pub #field_names : #field_types ,)*
+            }
+
+            impl Parsable for #msg_name {
+                fn parse(payload: &[u8]) -> #msg_name {
+                    let mut cur = Cursor::new(payload);
+                    #msg_name {
+                        #(#readers)*
+                    }
+                }
+
+                fn serialize(&self) -> Vec<u8> {
+                    let mut wtr = vec![];
+                    #(#writers)*
+                    wtr
+                }
+            }
+        }
+    }
+
     fn emit_proto(&self) -> Tokens {
         let mut cnt = 1;
         let defs = self
@@ -303,30 +360,88 @@ impl Default for MavField {
         }
     }
 }
-/*
+
 impl MavField {
-    fn emit_proto(&self) -> Tokens {
-        let name = Ident::from(self.name.clone());
-        let mavtype = match self.enumtype {
-            Some(ref enumtype) => {
-                let enum_name = enumtype
-                    .split("_")
-                    .map(|x| x.to_lowercase())
-                    .map(|x| {
-                        let mut v: Vec<char> = x.chars().collect();
-                        v[0] = v[0].to_uppercase().nth(0).unwrap();
-                        v.into_iter().collect()
-                    })
-                    .collect::<Vec<String>>()
-                    .join("");
-                Ident::from(enum_name)
+    /// return (#name, #type, #reader, #writer)
+    fn emit_tokens(&self) -> (Tokens, Tokens, Tokens, Tokens) {
+        let name;
+        if self.name == "type" {
+            name = "mavtype";
+        } else {
+            name = &self.name;
+        }
+        let name = Ident::from(name.clone());
+        let mavtype = Ident::from(self.mavtype.rust_type());
+
+        let mut reader = quote!();
+        let mut writer = quote!();
+        match self.mavtype {
+            MavType::Char | MavType::UInt8 | MavType::Int8 | MavType::UInt8MavlinkVersion => {
+                let read = Ident::from(format!("read_{}", self.mavtype.rust_type()));
+                reader = quote!{
+                    #name : cur. #read ().unwrap(),
+                };
+                let write = Ident::from(format!("write_{}", self.mavtype.rust_type()));
+                writer = quote!{
+                    wtr.#write(self.#name).unwrap();
+                };
             }
-            None => Ident::from(self.mavtype.proto_type()),
-        };
-        quote!(#mavtype #name)
+            MavType::Array(ref t, size) => {
+                for _ in 0..size {
+                    match *t.clone() {
+                        MavType::Char
+                        | MavType::UInt8
+                        | MavType::Int8
+                        | MavType::UInt8MavlinkVersion => {
+                            let read = Ident::from(format!("read_{}", t.rust_type()));
+                            reader.append(quote!{
+                                //#name : cur. #read ().unwrap(),
+                                #name: vec![],
+                            });
+                            let write = Ident::from(format!("write_{}", t.rust_type()));
+                            writer.append(quote!{
+                                    wtr.#write(self.#name[0]).unwrap();
+                            });
+                            break;
+                        }
+                        MavType::Array(_, _) => {
+                            panic!("error");
+                        }
+                        _ => {
+                            let read = Ident::from(format!("read_{}", t.rust_type()));
+                            reader.append(quote!{
+                                //#name : cur. #read::<LittleEndian> ().unwrap(),
+                                #name: vec![];
+                            });
+                            let write = Ident::from(format!("write_{}", t.rust_type()));
+                            writer.append(quote!{
+                                wtr.#write::<LittleEndian>(self.#name[0]).unwrap();
+                            });
+                            break;
+                        }
+                    }
+                }
+            }
+            _ => {
+                let read = Ident::from(format!("read_{}", self.mavtype.rust_type()));
+                reader = quote!{
+                    #name : cur. #read::<LittleEndian> ().unwrap(),
+                };
+                let write = Ident::from(format!("write_{}", self.mavtype.rust_type()));
+                writer = quote!{
+                    wtr.#write::<LittleEndian>(self.#name).unwrap();
+                };
+            }
+        }
+
+        (
+            quote!(#name),
+            quote!(#mavtype),
+            quote!(#reader),
+            quote!(#writer),
+        )
     }
 }
-*/
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum MavXmlElement {
@@ -399,7 +514,9 @@ impl MavProfile {
             .map(|d| d.emit_proto())
             .collect::<Vec<Tokens>>();
 
-        let comment = Ident::from(format!("// This file was automatically generated, do not edit \n"));
+        let comment = Ident::from(format!(
+            "// This file was automatically generated, do not edit \n"
+        ));
         quote!{
             #comment
             #(#enums)*
@@ -408,6 +525,33 @@ impl MavProfile {
                 required uint32 msg_id = 1;
                 required bytes msg_data = 2;
             }
+        }
+    }
+
+    fn emit_rust(&self) -> Tokens {
+        let comment = Ident::from(format!(
+            "// This file was automatically generated, do not edit \n"
+        ));
+        /*
+        let msgs = self
+            .messages
+            .iter()
+            .map(|d| d.emit_rust())
+            .collect::<Vec<Tokens>>();
+            */
+        let msgs = self.messages[4].emit_rust();
+        quote!{
+            #comment
+            use std::io::Cursor;
+            use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+
+            pub trait Parsable {
+                fn parse(payload: &[u8]) -> Self;
+                fn serialize(&self) -> Vec<u8>;
+            }
+
+            //#(#msgs)*
+            #msgs
         }
     }
 }
@@ -594,49 +738,23 @@ pub fn parse_profile(file: &mut Read) -> MavProfile {
     profile
 }
 
-pub fn generate_quote_test<R: Read, W: Write>(input: &mut R, output: &mut W) {
+/// Generate protobuf represenation of mavlink message set
+/// Generate rust representation of mavlink message set
+pub fn generate<R: Read, W: Write>(input: &mut R, output_proto: &mut W, output_rust: &mut W) {
     let profile = parse_profile(input);
 
-    /*
-    let toks = quote!{f32};
-    let toks = quote!{
-        fn serialize_vec_f32(v: Vec<#vars>) -> Vec<u8> {
-            let mut wtr = vec![];
-            for val in v {
-                wtr.write_f32::<LittleEndian>(val).unwrap();
-            }
-            wtr
-        }
-    };*/
-    /*
-    let enums = profile
-        .enums
-        .iter()
-        .map(|d| d.emit_proto())
-        .collect::<Vec<Tokens>>();
-    let toks = quote!{
+    // mavlink.proto
+    let proto_tokens = profile.emit_proto();
+    writeln!(output_proto, "{}", proto_tokens);
 
-        #(#enums)*
-    };
-    */
-    let toks = profile.emit_proto();
-    /*  
-    let toks = quote!{
-        fn main() {
-            #toks
-        }
-    };
-*/
-
-    //let rust_src = format!("{}",toks);
-    /* To format
-    let rust_src = toks.into_string();
+    // mavlink.rs
+    let rust_tokens = profile.emit_rust();
+    //writeln!(output_rust, "{}", rust_tokens);
+    let rust_src = rust_tokens.into_string();
     let mut cfg = rustfmt::config::Config::default();
     cfg.set().write_mode(rustfmt::config::WriteMode::Display);
-    rustfmt::format_input(rustfmt::Input::Text(rust_src), &cfg, Some(output)).unwrap();
-    */
-
-    writeln!(output, "{}", toks);
+    rustfmt::format_input(rustfmt::Input::Text(rust_src), &cfg, Some(output_rust)).unwrap();
+    
 }
 
 pub fn extra_crc(msg: &MavMessage) -> u8 {
@@ -660,24 +778,6 @@ pub fn extra_crc(msg: &MavMessage) -> u8 {
 
     let crcval = crc.get();
     ((crcval & 0xFF) ^ (crcval >> 8)) as u8
-}
-
-fn mavtype2protobuf(input: &MavType) -> String {
-    let s = match input {
-        MavType::UInt8MavlinkVersion | MavType::UInt8 => "uint32",
-        MavType::UInt16 => "uint32",
-        MavType::UInt32 => "uint32",
-        MavType::Char => "uint32",
-        MavType::UInt64 => "uint64",
-        MavType::Int8 => "int32",
-        MavType::Int16 => "int32",
-        MavType::Int32 => "int32",
-        MavType::Int64 => "int64",
-        MavType::Float => "float",
-        MavType::Double => "double",
-        MavType::Array(_, _) => "bytes",
-    };
-    String::from(s)
 }
 
 fn mavtype_parser(input: &MavType, field_name: &str) -> String {
@@ -707,102 +807,6 @@ fn mavtype_parser(input: &MavType, field_name: &str) -> String {
         */
     };
     String::from(s)
-}
-
-#[allow(unused_must_use)] // TODO make a macro?
-pub fn generate_protobuf<R: Read, W: Write>(input: &mut R, output: &mut W) {
-    let profile = parse_profile(input);
-    writeln!(output, "// Autogenerated code, do not change");
-
-    // generate Enums
-    for item in &profile.enums {
-        let enum_name = item
-            .name
-            .split("_")
-            .map(|x| x.to_lowercase())
-            .map(|x| {
-                let mut v: Vec<char> = x.chars().collect();
-                v[0] = v[0].to_uppercase().nth(0).unwrap();
-                v.into_iter().collect()
-            })
-            .collect::<Vec<String>>()
-            .join("");
-
-        writeln!(output, "enum {} {{", enum_name);
-
-        // add values for enums that don't have any value specified
-        let sum = item.entries.iter().map(|x| x.value).fold(0, |mut sum, x| {
-            sum += x;
-            sum
-        });
-        let mut cnt = 0;
-        for entry in &item.entries {
-            if sum == 0 {
-                writeln!(output, "  {} = {};", entry.name, cnt);
-                cnt += 1;
-            } else {
-                writeln!(output, "  {} = {};", entry.name, entry.value);
-            }
-        }
-        writeln!(output, "}}\n");
-    }
-
-    // generate Messages
-    let mut msg_cnt = 1;
-    for item in &profile.messages {
-        writeln!(output, "// id: {} {}", item.id, item.name);
-        let msg_name = item
-            .name
-            .split("_")
-            .map(|x| x.to_lowercase())
-            .map(|x| {
-                let mut v: Vec<char> = x.chars().collect();
-                v[0] = v[0].to_uppercase().nth(0).unwrap();
-                v.into_iter().collect()
-            })
-            .collect::<Vec<String>>()
-            .join("");
-
-        writeln!(output, "message {} {{", msg_name);
-        //writeln!(output, "  required uint32 msg_id = 1;");
-        let mut cnt = 1;
-        for field in &item.fields {
-            let enumtype;
-            match field.enumtype {
-                Some(ref t) => {
-                    enumtype = t
-                        .split("_")
-                        .map(|x| x.to_lowercase())
-                        .map(|x| {
-                            let mut v: Vec<char> = x.chars().collect();
-                            v[0] = v[0].to_uppercase().nth(0).unwrap();
-                            v.into_iter().collect()
-                        })
-                        .collect::<Vec<String>>()
-                        .join("");
-                }
-                None => {
-                    enumtype = mavtype2protobuf(&field.mavtype);
-                }
-            }
-            if &field.name == "type" {
-                // this little hack makes the proto file consistent with rust generated
-                // files, since "type" is a rust keyword
-                writeln!(output, "  required {} {} = {};", enumtype, "mavtype", cnt);
-            } else {
-                writeln!(output, "  required {} {} = {};", enumtype, field.name, cnt);
-            }
-            cnt += 1;
-        }
-        writeln!(output, "}}\n");
-        msg_cnt += 1;
-    }
-
-    // generate the big message
-    writeln!(output, "message MavlinkMessage {{");
-    writeln!(output, "  required uint32 msg_id = 1;");
-    writeln!(output, "  required bytes msg_data = 2;");
-    writeln!(output, "}}\n");
 }
 
 #[allow(unused_must_use)] // TODO fix

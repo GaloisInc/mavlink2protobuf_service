@@ -13,9 +13,9 @@ quote = "0.3"
 rustfmt = "0.9"
 
 [dependencies]
-mavlink = { path = "../rust-mavlink" }
-crc16 = "0.3.3"
+#mavlink = { path = "../rust-mavlink" }
+#crc16 = "0.3.3"
 byteorder = "0.5.3"
-xml-rs = "0.2"
-zmq = "0.8"
-protobuf = "2.0"
+#xml-rs = "0.2"
+#zmq = "0.8"
+#protobuf = "2.0"
