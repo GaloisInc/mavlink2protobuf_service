@@ -9,11 +9,8 @@ use std::io::prelude::*;
 
 #[macro_use]
 extern crate serde_derive;
-
 extern crate serde;
 extern crate serde_json;
-
-use serde_json::Error;
 
 mod connection;
 pub use connection::{ MavConnection, Tcp, Udp, Serial, connect };
@@ -98,74 +95,3 @@ pub fn write<W: Write>(w: &mut W, header: Header, data: &MavMessage) -> io::Resu
 
     Ok(())
 }
-/*
-/// Create a heartbeat message
-pub fn heartbeat_message() -> common::MavMessage {
-    common::MavMessage::HEARTBEAT(common::HEARTBEAT_DATA {
-        custom_mode: 0,
-        mavtype: 6,
-        autopilot: 8,
-        base_mode: 0,
-        system_status: 0,
-        mavlink_version: 0x3,
-    })
-}
-
-/// Create a message requesting the parameters list
-pub fn request_parameters() -> common::MavMessage {
-    common::MavMessage::PARAM_REQUEST_LIST(common::PARAM_REQUEST_LIST_DATA {
-        target_system: 0,
-        target_component: 0,
-    })
-}
-
-/// Create a message enabling data streaming
-pub fn request_stream() -> common::MavMessage {
-    common::MavMessage::REQUEST_DATA_STREAM(common::REQUEST_DATA_STREAM_DATA {
-        target_system: 0,
-        target_component: 0,
-        req_stream_id: 0,
-        req_message_rate: 10,
-        start_stop: 1,
-    })
-}
-
-#[cfg(test)]
-mod test_message {
-    use super::*;
-    pub const HEARTBEAT: &'static[u8] = &[0xfe, 0x09, 0xef, 0x01, 0x01, 0x00, 0x05, 0x00, 0x00, 0x00, 0x02, 0x03, 0x59, 0x03, 0x03, 0xf1, 0xd7];
-    pub const HEARTBEAT_HEADER: Header = Header { sequence: 239, system_id: 1, component_id: 1 };
-    pub const HEARTBEAT_MSG: common::HEARTBEAT_DATA = common::HEARTBEAT_DATA { custom_mode: 5, mavtype: 2, autopilot: 3, base_mode: 89, system_status: 3, mavlink_version: 3 };
-    
-    #[test]
-    pub fn test_read() {
-        let mut r = HEARTBEAT;
-        let (header, msg) = read(&mut r).expect("Failed to parse message");
-        
-        println!("{:?}, {:?}", header, msg);
-        
-        assert_eq!(header, HEARTBEAT_HEADER);
-        
-        if let common::MavMessage::HEARTBEAT(msg) = msg {
-            assert_eq!(msg.custom_mode, HEARTBEAT_MSG.custom_mode);
-            assert_eq!(msg.mavtype, HEARTBEAT_MSG.mavtype);
-            assert_eq!(msg.autopilot, HEARTBEAT_MSG.autopilot);
-            assert_eq!(msg.base_mode, HEARTBEAT_MSG.base_mode);
-            assert_eq!(msg.system_status, HEARTBEAT_MSG.system_status);
-            assert_eq!(msg.mavlink_version, HEARTBEAT_MSG.mavlink_version);
-        } else {
-            panic!("Decoded wrong message type")
-        }
-    }
-    
-    #[test]
-    pub fn test_write() {
-        let mut v = vec![];
-        write(&mut v, HEARTBEAT_HEADER, &common::MavMessage::HEARTBEAT(HEARTBEAT_MSG.clone()))
-            .expect("Failed to write message");
-        
-        assert_eq!(&v[..], HEARTBEAT);
-    }
-    
-}
-*/

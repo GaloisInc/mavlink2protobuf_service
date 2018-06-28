@@ -26,6 +26,7 @@ impl Default for MavEnum {
 }
 
 impl MavEnum {
+    #[allow(dead_code)]
     fn has_enum_values(&self) -> bool {
         // add values for enums that don't have any value specified
         let sum = self.entries.iter().map(|x| x.value).fold(0, |mut sum, x| {
@@ -39,6 +40,7 @@ impl MavEnum {
         }
     }
 
+    #[allow(dead_code)]
     fn emit_proto_defs(&self) -> Vec<Tokens> {
         let mut cnt = 0;
         self.entries
@@ -57,6 +59,7 @@ impl MavEnum {
             .collect::<Vec<Tokens>>()
     }
 
+    #[allow(dead_code)]
     fn emit_proto_names(&self) -> Tokens {
         let name = self
             .name
@@ -73,6 +76,7 @@ impl MavEnum {
         quote!(#name)
     }
 
+    #[allow(dead_code)]
     fn emit_proto(&self) -> Tokens {
         let defs = self.emit_proto_defs();
         let enum_name = self.emit_proto_names();
@@ -134,6 +138,8 @@ impl MavMessage {
             .map(|field| field.emit_name_type())
             .collect::<Vec<Tokens>>()
     }
+
+    #[allow(dead_code)]
     fn emit_field_names(&self) -> Vec<Tokens> {
         self.fields
             .iter()
@@ -141,6 +147,7 @@ impl MavMessage {
             .collect::<Vec<Tokens>>()
     }
 
+    #[allow(dead_code)]
     fn emit_field_types(&self) -> Vec<Tokens> {
         self.fields
             .iter()
@@ -171,7 +178,7 @@ impl MavMessage {
                 let id = Ident::from(cnt.to_string());
                 cnt += 1;
                 let writer = match msg_field.mavtype {
-                    MavType::Array(ref t, size) => match *t.clone() {
+                    MavType::Array(ref t, _) => match *t.clone() {
                         MavType::Array(_, _) => {
                             panic!("error");
                         }
@@ -199,8 +206,8 @@ impl MavMessage {
     fn emit_rust(&self) -> Tokens {
         let msg_name = self.emit_struct_name();
         let name_types = self.emit_name_types();
-        let field_names = self.emit_field_names();
-        let field_types = self.emit_field_types();
+        //let field_names = self.emit_field_names();
+        //let field_types = self.emit_field_types();
         let readers = self.emit_rust_readers();
         let writers = self.emit_rust_writers();
         let proto_writers = self.emit_proto_writers();
@@ -271,7 +278,8 @@ impl MavMessage {
                 cnt += 1;
                 let mavtype = match msg_field.enumtype {
                     Some(ref enumtype) => {
-                        let enum_name = enumtype
+                        // TODO: generate enums too
+                        let _enum_name = enumtype
                             .split("_")
                             .map(|x| x.to_lowercase())
                             .map(|x| {
@@ -460,21 +468,26 @@ impl MavField {
         let mavtype = Ident::from(self.mavtype.rust_type());
         quote!(#mavtype)
     }
-    
+
     fn emit_name_type(&self) -> Tokens {
-        let name = Ident::from(self.name.clone());
-        let mavtype = Ident::from(self.mavtype.rust_type());
+        let name = self.emit_name();
+        let mavtype = self.emit_type();
         match self.mavtype {
             MavType::Float => {
                 quote!{
                     #[serde(deserialize_with="parse_f32")]
                     #name: #mavtype,
                 }
-            },
-            _ => { quote!(#name: #mavtype,)}
+            }
+            MavType::Double => {
+                quote!{
+                    #[serde(deserialize_with="parse_f64")]
+                    #name: #mavtype,
+                }
+            }
+            _ => quote!(#name: #mavtype,),
         }
     }
-    
 
     fn emit_writer(&self) -> Tokens {
         let name = self.emit_name();
@@ -628,6 +641,7 @@ pub struct MavProfile {
 }
 
 impl MavProfile {
+    #[allow(dead_code)]
     fn emit_proto_enums(&self) -> Vec<Tokens> {
         self.enums
             .iter()
@@ -643,7 +657,7 @@ impl MavProfile {
     }
 
     fn emit_proto(&self) -> Tokens {
-        let enums = self.emit_proto_enums();
+        //let enums = self.emit_proto_enums();
         let msgs = self.emit_proto_msgs();
 
         let comment = Ident::from(format!(
@@ -651,6 +665,7 @@ impl MavProfile {
         ));
         quote!{
             #comment
+            // TODO: generate enums too
             //#(#enums)*
             #(#msgs)*
             message MavlinkMessage {
@@ -660,49 +675,63 @@ impl MavProfile {
         }
     }
 
-    fn emit_rust(&self) -> Tokens {
-        let comment = Ident::from(format!(
+    fn emit_comments(&self) -> Ident {
+        Ident::from(format!(
             "// This file was automatically generated, do not edit \n"
-        ));
+        ))
+    }
 
-        let msgs = self
-            .messages
+    fn emit_msgs(&self) -> Vec<Tokens> {
+        self.messages
             .iter()
             .map(|d| d.emit_rust())
-            .collect::<Vec<Tokens>>();
+            .collect::<Vec<Tokens>>()
+    }
 
-        let enum_names = self
-            .messages
+    fn emit_enum_names(&self) -> Vec<Tokens> {
+        self.messages
             .iter()
             .map(|msg| {
                 let name = Ident::from(msg.name.clone());
                 quote!(#name)
             })
-            .collect::<Vec<Tokens>>();
+            .collect::<Vec<Tokens>>()
+    }
 
-        let struct_names = self
-            .messages
+    fn emit_struct_names(&self) -> Vec<Tokens> {
+        self.messages
             .iter()
             .map(|msg| msg.emit_struct_name())
-            .collect::<Vec<Tokens>>();
+            .collect::<Vec<Tokens>>()
+    }
 
-        let msg_ids = self
-            .messages
+    fn emit_msg_ids(&self) -> Vec<Tokens> {
+        self.messages
             .iter()
             .map(|msg| {
                 let id = Ident::from(msg.id.to_string());
                 quote!(#id)
             })
-            .collect::<Vec<Tokens>>();
+            .collect::<Vec<Tokens>>()
+    }
 
-        let msg_crc = self
-            .messages
+    fn emit_msg_crc(&self) -> Vec<Tokens> {
+        self.messages
             .iter()
             .map(|msg| {
                 let crc = Ident::from(extra_crc(&msg).to_string());
                 quote!(#crc)
             })
-            .collect::<Vec<Tokens>>();
+            .collect::<Vec<Tokens>>()
+    }
+
+    fn emit_rust(&self) -> Tokens {
+        let comment = self.emit_comments();
+        let msgs = self.emit_msgs();
+        let enum_names = self.emit_enum_names();
+        let struct_names = self.emit_struct_names();
+        let msg_ids = self.emit_msg_ids();
+        let msg_crc = self.emit_msg_crc();
 
         /*
         let msgs = self.messages[4].emit_rust();
@@ -745,18 +774,28 @@ impl MavProfile {
             use std::io::Cursor;
             use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
-            use protobuf::Message as Message_imported_for_functions;
-            use protobuf::ProtobufEnum as ProtobufEnum_imported_for_functions;
-            
+            // TODO: generate proper protobuf
+            //use protobuf::Message as Message_imported_for_functions;
+            //use protobuf::ProtobufEnum as ProtobufEnum_imported_for_functions;
+
             use serde::Deserializer;
             use serde::de::Deserialize;
-            
-            use std::f32;
 
+            use std::{f32,f64};
+
+            #[allow(dead_code)]
             fn parse_f32<'de, D>(d: D) -> Result<f32, D::Error> where D: Deserializer<'de> {
                 Deserialize::deserialize(d)
                     .map(|x: Option<_>| {
                     x.unwrap_or(f32::NAN)
+                })
+            }
+
+            #[allow(dead_code)]
+            fn parse_f64<'de, D>(d: D) -> Result<f64, D::Error> where D: Deserializer<'de> {
+                Deserialize::deserialize(d)
+                    .map(|x: Option<_>| {
+                    x.unwrap_or(f64::NAN)
                 })
             }
 
@@ -771,7 +810,7 @@ impl MavProfile {
             }
 
             #(#msgs)*
-            
+
             #[derive(Serialize, Deserialize)]
             #mav_message
 
