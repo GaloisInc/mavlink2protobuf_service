@@ -1,5 +1,8 @@
-//extern crate protobuf;
+extern crate zmq;
 extern crate mavlink_proto;
+
+//extern crate serde;
+//extern crate serde_json;
 
 use std::sync::Arc;
 use std::thread;
@@ -31,21 +34,26 @@ fn main() {
         }
     });
 
+    let context = zmq::Context::new();
+    let publisher = context.socket(zmq::PUB).unwrap();
+
+    assert!(publisher.bind("tcp://*:5556").is_ok());
+    assert!(publisher.bind("ipc://weather.ipc").is_ok());
+
     loop {
         if let Ok(msg) = vehicle.recv() {
             //println!("{:?}", msg);
+            // MavMessage::parse()
             match msg {
                 MavMessage::SYS_STATUS(data) => {
                     println!("{:?}", data);
-                    let v = data.write_to_protostream().unwrap();
-                    println!("v.len={}",v.len());
+                    let stream = data.write_to_protostream().unwrap();
+                    println!("stream.len={}",stream.len());
+                    
+                    publisher.send(&stream, 0).unwrap(); // send &w with 0 flags        
                 }
                 _ => {}
             }
-            
-            
-        } else {
-            break;
         }
     }
 }
