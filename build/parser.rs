@@ -128,6 +128,12 @@ impl MavMessage {
         let name = Ident::from(format!("{}_DATA", self.name));
         quote!(#name)
     }
+    fn emit_name_types(&self) -> Vec<Tokens> {
+        self.fields
+            .iter()
+            .map(|field| field.emit_name_type())
+            .collect::<Vec<Tokens>>()
+    }
     fn emit_field_names(&self) -> Vec<Tokens> {
         self.fields
             .iter()
@@ -192,7 +198,7 @@ impl MavMessage {
 
     fn emit_rust(&self) -> Tokens {
         let msg_name = self.emit_struct_name();
-
+        let name_types = self.emit_name_types();
         let field_names = self.emit_field_names();
         let field_types = self.emit_field_types();
         let readers = self.emit_rust_readers();
@@ -200,9 +206,11 @@ impl MavMessage {
         let proto_writers = self.emit_proto_writers();
 
         quote!{
-            #[derive(Clone, Debug)]
+            #[derive(Clone, Debug, Serialize, Deserialize, Default)]
             pub struct #msg_name {
-                #(pub #field_names : #field_types ,)*
+                //#(pub #field_names : #field_types ,)*
+                // to make deserialiation work
+                #(#name_types)*
             }
 
             impl Parsable for #msg_name {
@@ -452,6 +460,21 @@ impl MavField {
         let mavtype = Ident::from(self.mavtype.rust_type());
         quote!(#mavtype)
     }
+    
+    fn emit_name_type(&self) -> Tokens {
+        let name = Ident::from(self.name.clone());
+        let mavtype = Ident::from(self.mavtype.rust_type());
+        match self.mavtype {
+            MavType::Float => {
+                quote!{
+                    #[serde(deserialize_with="parse_f32")]
+                    #name: #mavtype,
+                }
+            },
+            _ => { quote!(#name: #mavtype,)}
+        }
+    }
+    
 
     fn emit_writer(&self) -> Tokens {
         let name = self.emit_name();
@@ -724,6 +747,18 @@ impl MavProfile {
 
             use protobuf::Message as Message_imported_for_functions;
             use protobuf::ProtobufEnum as ProtobufEnum_imported_for_functions;
+            
+            use serde::Deserializer;
+            use serde::de::Deserialize;
+            
+            use std::f32;
+
+            fn parse_f32<'de, D>(d: D) -> Result<f32, D::Error> where D: Deserializer<'de> {
+                Deserialize::deserialize(d)
+                    .map(|x: Option<_>| {
+                    x.unwrap_or(f32::NAN)
+                })
+            }
 
             pub trait Parsable {
                 fn parse(payload: &[u8]) -> Self;
@@ -736,6 +771,8 @@ impl MavProfile {
             }
 
             #(#msgs)*
+            
+            #[derive(Serialize, Deserialize)]
             #mav_message
 
             impl MavMessage {

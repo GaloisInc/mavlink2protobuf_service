@@ -7,6 +7,14 @@ use std::io;
 use byteorder::{ LittleEndian, ReadBytesExt, WriteBytesExt };
 use std::io::prelude::*;
 
+#[macro_use]
+extern crate serde_derive;
+
+extern crate serde;
+extern crate serde_json;
+
+use serde_json::Error;
+
 mod connection;
 pub use connection::{ MavConnection, Tcp, Udp, Serial, connect };
 
@@ -90,7 +98,7 @@ pub fn write<W: Write>(w: &mut W, header: Header, data: &MavMessage) -> io::Resu
 
     Ok(())
 }
-
+/*
 /// Create a heartbeat message
 pub fn heartbeat_message() -> common::MavMessage {
     common::MavMessage::HEARTBEAT(common::HEARTBEAT_DATA {
@@ -160,3 +168,4 @@ mod test_message {
     }
     
 }
+*/
