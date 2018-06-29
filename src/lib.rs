@@ -1,7 +1,10 @@
+extern crate prost;
+#[macro_use]
+extern crate prost_derive;
+
 extern crate byteorder;
 extern crate crc16;
 extern crate serial;
-extern crate protobuf;
 
 use std::io;
 use byteorder::{ LittleEndian, ReadBytesExt, WriteBytesExt };

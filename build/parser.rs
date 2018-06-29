@@ -61,6 +61,7 @@ impl MavEnum {
 
     #[allow(dead_code)]
     fn emit_proto_names(&self) -> Tokens {
+        /*
         let name = self
             .name
             .split("_")
@@ -72,7 +73,8 @@ impl MavEnum {
             })
             .collect::<Vec<String>>()
             .join("");
-        let name = Ident::from(name);
+            */
+        let name = Ident::from(self.name.clone());
         quote!(#name)
     }
 
@@ -128,14 +130,26 @@ impl Default for MavMessage {
 }
 
 impl MavMessage {
+    /// Return Token of "MESSAGE_NAME_DATA
+    /// for mavlink struct data
     fn emit_struct_name(&self) -> Tokens {
-        let name = Ident::from(format!("{}_DATA", self.name));
+        let name = Ident::from(format!("{}Data", self.name));
         quote!(#name)
     }
     fn emit_name_types(&self) -> Vec<Tokens> {
+        let mut cnt = 1;
         self.fields
             .iter()
-            .map(|field| field.emit_name_type())
+            .map(|field| {
+                let nametype = field.emit_name_type();
+                let val = Ident::from(format!("\"{}\"", cnt));
+                let proto_type = Ident::from(field.mavtype.proto_type());
+                cnt += 1;
+                quote!{
+                    #[prost(#proto_type, required, tag= #val )]
+                    #nametype
+                }
+            })
             .collect::<Vec<Tokens>>()
     }
 
@@ -169,54 +183,19 @@ impl MavMessage {
             .collect::<Vec<Tokens>>()
     }
 
-    fn emit_proto_writers(&self) -> Vec<Tokens> {
-        let mut cnt = 1;
-        self.fields
-            .iter()
-            .map(|msg_field| {
-                let name = Ident::from(msg_field.name.clone());
-                let id = Ident::from(cnt.to_string());
-                cnt += 1;
-                let writer = match msg_field.mavtype {
-                    MavType::Array(ref t, _) => match *t.clone() {
-                        MavType::Array(_, _) => {
-                            panic!("error");
-                        }
-                        _ => {
-                            quote!{
-                                let dummy_vec = vec![];
-                                os.write_bytes(#id, dummy_vec.as_ref())?;
-                                //os.write_bytes(#id, self.#name.as_ref())?;
-                            }
-                        }
-                    },
-                    _ => {
-                        let write =
-                            Ident::from(format!("write_{}", msg_field.mavtype.proto_type()));
-                        quote!{
-                            os.#write(#id, self.#name.into())?;
-                        }
-                    }
-                };
-                writer
-            })
-            .collect::<Vec<Tokens>>()
-    }
-
     fn emit_rust(&self) -> Tokens {
         let msg_name = self.emit_struct_name();
         let name_types = self.emit_name_types();
-        //let field_names = self.emit_field_names();
-        //let field_types = self.emit_field_types();
         let readers = self.emit_rust_readers();
         let writers = self.emit_rust_writers();
-        let proto_writers = self.emit_proto_writers();
+        let comment = Ident::from(format!("/// id: {}\n", self.id));
 
         quote!{
-            #[derive(Clone, Debug, Serialize, Deserialize, Default)]
+            #comment
+            #[derive(Clone, PartialEq, Message)]
+            #[derive(Serialize, Deserialize)]
             pub struct #msg_name {
-                //#(pub #field_names : #field_types ,)*
-                // to make deserialiation work
+                // to make deserialiation work (we need to insert serde_ attributes for f32 and f64 fields)
                 #(#name_types)*
             }
 
@@ -234,25 +213,12 @@ impl MavMessage {
                     wtr
                 }
             }
-
-            impl ProtobufParsable for #msg_name {
-                fn read_from_protostream(&mut self, is: Vec<u8>) -> ::protobuf::ProtobufResult<()> {
-                    // Todo
-                    ::std::result::Result::Ok(())
-                }
-                fn write_to_protostream(&self) -> ::protobuf::ProtobufResult<Vec<u8>> {
-                    let mut v = vec![]; // TODO: allocated with capacity
-                    {
-                        let mut os = ::protobuf::stream::CodedOutputStream::vec(&mut v);
-                        #(#proto_writers)*
-                    }
-                    ::std::result::Result::Ok(v)
-                }
-            }
         }
     }
 
+    /// Message name in protbuf format, i.e MessageName
     fn emit_proto_name(&self) -> Tokens {
+        /*
         let name = self
             .name
             .split("_")
@@ -264,10 +230,13 @@ impl MavMessage {
             })
             .collect::<Vec<String>>()
             .join("");
-        let name = Ident::from(name);
+            */
+        let name = Ident::from(self.name.clone());
         quote!(#name)
     }
 
+    /// Create protobuf message fields definitions
+    /// e.g. "required uint32 time_boot_ms = 1;"
     fn emit_proto_defs(&self) -> Vec<Tokens> {
         let mut cnt = 1;
         self.fields
@@ -276,10 +245,10 @@ impl MavMessage {
                 let name = Ident::from(msg_field.name.clone());
                 let value = Ident::from(cnt.to_string());
                 cnt += 1;
-                let mavtype = match msg_field.enumtype {
+                match msg_field.enumtype {
                     Some(ref enumtype) => {
                         // TODO: generate enums too
-                        let _enum_name = enumtype
+                        let _enum_name = enumtype;/*
                             .split("_")
                             .map(|x| x.to_lowercase())
                             .map(|x| {
@@ -289,13 +258,20 @@ impl MavMessage {
                             })
                             .collect::<Vec<String>>()
                             .join("");
-                        //Ident::from(enum_name)
+                            */
+                        //let mavtype = Ident::from(_enum_name.clone());
                         // Create a uint32 instead of enum for now
-                        Ident::from("uint32".to_string())
+                        let mavtype = Ident::from("uint32".to_string());
+                        quote!(required #mavtype #name = #value;)
                     }
-                    None => Ident::from(msg_field.mavtype.proto_type()),
-                };
-                quote!(required #mavtype #name = #value;)
+                    None => {
+                        let mavtype = Ident::from(msg_field.mavtype.proto_type());
+                        match msg_field.mavtype {
+                            MavType::Array(_, _) => quote!(repeated #mavtype #name = #value;),
+                            _ => quote!(required #mavtype #name = #value;),
+                        }
+                    }
+                }
             })
             .collect::<Vec<Tokens>>()
     }
@@ -429,7 +405,16 @@ impl MavType {
             UInt64 => "uint64".into(),
             Int64 => "int64".into(),
             Double => "double".into(),
-            Array(_, _) => "bytes".into(),
+            Array(t, _) => match *t.clone() {
+                UInt8MavlinkVersion | Char | UInt8 | Int8 => "bytes".into(),
+                Array(_, _) => panic!("Error matching Mavtype"),
+                UInt16 | UInt32 => "uint32".into(),
+                Int16 | Int32 => "int32".into(),
+                Float => "float".into(),
+                UInt64 => "uint64".into(),
+                Int64 => "int64".into(),
+                Double => "double".into(),
+            },
         }
     }
 
@@ -656,31 +641,61 @@ impl MavProfile {
             .collect::<Vec<Tokens>>()
     }
 
+    fn emit_proto_msg_names(&self) -> Vec<Tokens> {
+        let mut cnt = 1;
+        self.messages
+            .iter()
+            .map(|msg| {
+                let msg_type_name = msg.emit_proto_name();
+                let msg_field_name = Ident::from(msg.name.to_lowercase());
+                let msg_field_num = Ident::from(cnt.to_string());
+                cnt += 1;
+                quote!{
+                    //optional #msg_type_name #msg_field_name = #msg_field_num;
+                    #msg_type_name #msg_field_name = #msg_field_num;
+                }
+            })
+            .collect::<Vec<Tokens>>()
+    }
+
+    /// Emit proto file
     fn emit_proto(&self) -> Tokens {
-        //let enums = self.emit_proto_enums();
+        let enums = self.emit_proto_enums();
         let msgs = self.emit_proto_msgs();
+        let mav_msg_fields = self.emit_proto_msg_names();
 
         let comment = Ident::from(format!(
             "// This file was automatically generated, do not edit \n"
         ));
         quote!{
             #comment
+
+            syntax = "proto2";
+            package mavlink.common;
+
             // TODO: generate enums too
             //#(#enums)*
+
+            // List of all messages
             #(#msgs)*
+
+            // Union over all messages
             message MavlinkMessage {
-                required uint32 msg_id = 1;
-                required bytes msg_data = 2;
+                oneof msg_set {
+                #(#mav_msg_fields)*
+                }
             }
         }
     }
 
+    /// Simple header comment
     fn emit_comments(&self) -> Ident {
         Ident::from(format!(
             "// This file was automatically generated, do not edit \n"
         ))
     }
 
+    /// Emit rust messages
     fn emit_msgs(&self) -> Vec<Tokens> {
         self.messages
             .iter()
@@ -688,6 +703,7 @@ impl MavProfile {
             .collect::<Vec<Tokens>>()
     }
 
+    /// Get list of original message names
     fn emit_enum_names(&self) -> Vec<Tokens> {
         self.messages
             .iter()
@@ -698,6 +714,7 @@ impl MavProfile {
             .collect::<Vec<Tokens>>()
     }
 
+    ///
     fn emit_struct_names(&self) -> Vec<Tokens> {
         self.messages
             .iter()
@@ -705,6 +722,7 @@ impl MavProfile {
             .collect::<Vec<Tokens>>()
     }
 
+    /// A list of message IDs
     fn emit_msg_ids(&self) -> Vec<Tokens> {
         self.messages
             .iter()
@@ -715,6 +733,7 @@ impl MavProfile {
             .collect::<Vec<Tokens>>()
     }
 
+    /// CRC values needed for mavlink parsing
     fn emit_msg_crc(&self) -> Vec<Tokens> {
         self.messages
             .iter()
@@ -732,37 +751,6 @@ impl MavProfile {
         let struct_names = self.emit_struct_names();
         let msg_ids = self.emit_msg_ids();
         let msg_crc = self.emit_msg_crc();
-
-        /*
-        let msgs = self.messages[4].emit_rust();
-        let enum_names = { let name = Ident::from(self.messages[4].name.clone()); quote!(#name) };
-        let struct_names = self.messages[4].emit_struct_name();
-        */
-        /*
-        //// test
-        let mut msgs = vec![];
-        let mut enum_names = vec![];
-        let mut struct_names = vec![];
-        let mut msg_ids = vec![];
-        let mut msg_crc = vec![];
-        for idx in 0..5 {
-            msgs.push(self.messages[idx].emit_rust());
-            enum_names.push({
-                let name = Ident::from(self.messages[idx].name.clone());
-                quote!(#name)
-            });
-            struct_names.push(self.messages[idx].emit_struct_name());
-            msg_ids.push({
-                let id = Ident::from(self.messages[idx].id.to_string());
-                quote!(#id)
-            });
-            msg_crc.push({
-                let crc = Ident::from(extra_crc(&self.messages[idx]).to_string());
-                quote!(#crc)
-            });
-        }
-        ///// test
-*/
         let mav_message = self.emit_mav_message(enum_names.clone(), struct_names.clone());
         let mav_message_parse =
             self.emit_mav_message_parse(enum_names.clone(), struct_names, msg_ids.clone());
@@ -771,16 +759,15 @@ impl MavProfile {
 
         quote!{
             #comment
+            // Cursor and byteorder is needed for parsing mavlink data
             use std::io::Cursor;
             use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
-            // TODO: generate proper protobuf
-            //use protobuf::Message as Message_imported_for_functions;
-            //use protobuf::ProtobufEnum as ProtobufEnum_imported_for_functions;
-
+            // Serde imports are needed to handle parsing null fields in JSON
             use serde::Deserializer;
             use serde::de::Deserialize;
 
+            // replace Null with NAN
             use std::{f32,f64};
 
             #[allow(dead_code)]
@@ -799,19 +786,16 @@ impl MavProfile {
                 })
             }
 
+            // For mavlink parsing
             pub trait Parsable {
                 fn parse(payload: &[u8]) -> Self;
                 fn serialize(&self) -> Vec<u8>;
             }
 
-            pub trait ProtobufParsable {
-                fn read_from_protostream(&mut self, is: Vec<u8>) -> ::protobuf::ProtobufResult<()>;
-                fn write_to_protostream(&self) -> ::protobuf::ProtobufResult<Vec<u8>>;
-            }
-
             #(#msgs)*
 
-            #[derive(Serialize, Deserialize)]
+            #[derive(Clone, PartialEq)]
+            #[derive(Serialize)]
             #mav_message
 
             impl MavMessage {
@@ -830,7 +814,6 @@ impl MavProfile {
 
     fn emit_mav_message(&self, enums: Vec<Tokens>, structs: Vec<Tokens>) -> Tokens {
         quote!{
-            #[derive(Clone, Debug)]
                 pub enum MavMessage {
                     #(#enums(#structs)),*
                 }
@@ -939,7 +922,19 @@ pub fn parse_profile(file: &mut Read) -> MavProfile {
                     match stack.last() {
                         Some(&MavXmlElement::Enum) => match attr.name.local_name.clone().as_ref() {
                             "name" => {
-                                mavenum.name = attr.value.clone();
+                                mavenum.name =
+                                    attr.value
+                                        .clone()
+                                        .split("_")
+                                        .map(|x| x.to_lowercase())
+                                        .map(|x| {
+                                            let mut v: Vec<char> = x.chars().collect();
+                                            v[0] = v[0].to_uppercase().nth(0).unwrap();
+                                            v.into_iter().collect()
+                                        })
+                                        .collect::<Vec<String>>()
+                                        .join("");
+                                //mavenum.name = attr.value.clone();
                             }
                             _ => (),
                         },
@@ -957,7 +952,19 @@ pub fn parse_profile(file: &mut Read) -> MavProfile {
                         Some(&MavXmlElement::Message) => {
                             match attr.name.local_name.clone().as_ref() {
                                 "name" => {
-                                    message.name = attr.value.clone();
+                                    message.name = attr
+                                        .value
+                                        .clone()
+                                        .split("_")
+                                        .map(|x| x.to_lowercase())
+                                        .map(|x| {
+                                            let mut v: Vec<char> = x.chars().collect();
+                                            v[0] = v[0].to_uppercase().nth(0).unwrap();
+                                            v.into_iter().collect()
+                                        })
+                                        .collect::<Vec<String>>()
+                                        .join("");
+                                    //message.name = attr.value.clone();
                                 }
                                 "id" => {
                                     message.id = attr.value.parse::<u8>().unwrap();
@@ -977,7 +984,19 @@ pub fn parse_profile(file: &mut Read) -> MavProfile {
                                     field.mavtype = parse_type(&attr.value).unwrap();
                                 }
                                 "enum" => {
-                                    field.enumtype = Some(attr.value.clone());
+                                    field.enumtype = Some(attr
+                                        .value
+                                        .clone()
+                                        .split("_")
+                                        .map(|x| x.to_lowercase())
+                                        .map(|x| {
+                                            let mut v: Vec<char> = x.chars().collect();
+                                            v[0] = v[0].to_uppercase().nth(0).unwrap();
+                                            v.into_iter().collect()
+                                        })
+                                        .collect::<Vec<String>>()
+                                        .join(""));
+                                    //field.enumtype = Some(attr.value.clone());
                                 }
                                 _ => (),
                             }
@@ -1072,7 +1091,8 @@ pub fn generate<R: Read, W: Write>(input: &mut R, output_proto: &mut W, output_r
 
     // rust file
     let rust_tokens = profile.emit_rust();
-    //writeln!(output_rust, "{}", rust_tokens);
+    //writeln!(output_rust, "{}", rust_tokens).unwrap();
+
     let rust_src = rust_tokens.into_string();
     let mut cfg = rustfmt::config::Config::default();
     cfg.set().write_mode(rustfmt::config::WriteMode::Display);
@@ -1101,405 +1121,3 @@ pub fn extra_crc(msg: &MavMessage) -> u8 {
     let crcval = crc.get();
     ((crcval & 0xFF) ^ (crcval >> 8)) as u8
 }
-
-/*
-fn mavtype_parser(input: &MavType, field_name: &str) -> String {
-    let s = match input {
-        MavType::UInt8MavlinkVersion | MavType::UInt8 => format!("data.{}.into()", field_name),
-        MavType::UInt16 | MavType::UInt32 | MavType::Char => format!("data.{}.into()", field_name),
-        MavType::UInt64 => format!("data.{}.into()", field_name),
-        MavType::Int8 | MavType::Int16 | MavType::Int32 | MavType::Int64 => {
-            format!("data.{}.into()", field_name)
-        }
-        MavType::Float => format!("data.{}.into()", field_name),
-        MavType::Double => format!("data.{}.into()", field_name),
-        MavType::Array(boxed_type, _) => match **boxed_type {
-            MavType::Float => format!("serialize_vec_f32(data.{})", field_name),
-            MavType::Int16 => format!("serialize_vec_i16(data.{})", field_name),
-            MavType::Int32 => format!("serialize_vec_i32(data.{})", field_name),
-            MavType::UInt16 => format!("serialize_vec_u16(data.{})", field_name),
-            MavType::UInt32 => format!("serialize_vec_u32(data.{})", field_name),
-            MavType::Char | MavType::UInt8 => format!("data.{}.into()", field_name),
-            MavType::Int8 => format!("serialize_vec_i8(data.{})", field_name),
-            _ => panic!("Unknown format: {:?}", boxed_type),
-        },
-    };
-    String::from(s)
-}
-*/
-/*
-#[allow(unused_must_use)] // TODO fix
-pub fn generate_connector<R: Read, W: Write>(input: &mut R, output: &mut W) {
-    let profile = parse_profile(input);
-    writeln!(
-        output,
-        "
-// Autogenerated code, do not edit
-use protobuf::stream::*;
-use protobuf::Message;
-use protobuf::ProtobufEnum;
-
-use mavlink::common::*;
-
-use byteorder::{{LittleEndian, WriteBytesExt}};
-
-
-mod mavlink_common_proto;
-
-fn serialize_vec_i8(v: Vec<i8>) -> Vec<u8> {{
-    let mut wtr = vec![];
-    for val in v {{
-        wtr.push(val as u8);
-    }}
-    wtr
-}}
-
-fn serialize_vec_f32(v: Vec<f32>) -> Vec<u8> {{
-    let mut wtr = vec![];
-    for val in v {{
-        wtr.write_f32::<LittleEndian>(val).unwrap();
-    }}
-    wtr
-}}
-
-fn serialize_vec_i16(v: Vec<i16>) -> Vec<u8> {{
-    let mut wtr = vec![];
-    for val in v {{
-        wtr.write_i16::<LittleEndian>(val).unwrap();
-    }}
-    wtr
-}}
-
-fn serialize_vec_u16(v: Vec<u16>) -> Vec<u8> {{
-    let mut wtr = vec![];
-    for val in v {{
-        wtr.write_u16::<LittleEndian>(val).unwrap();
-    }}
-    wtr
-}}
-
-fn serialize_vec_i32(v: Vec<i32>) -> Vec<u8> {{
-    let mut wtr = vec![];
-    for val in v {{
-        wtr.write_i32::<LittleEndian>(val).unwrap();
-    }}
-    wtr
-}}
-
-fn serialize_vec_u32(v: Vec<u32>) -> Vec<u8> {{
-    let mut wtr = vec![];
-    for val in v {{
-        wtr.write_u32::<LittleEndian>(val).unwrap();
-    }}
-    wtr
-}}
-
-
-pub fn mavlink2protobuf(msg: MavMessage) -> mavlink_common_proto::MavlinkMessage {{
-    let mut proto = mavlink_common_proto::MavlinkMessage::new();
-    let mut msg_data = vec![];
-    let id = msg.message_id();
-    match msg {{"
-    );
-
-    for item in &profile.messages {
-        writeln!(output, "        MavMessage::{}(data) => {{", item.name);
-        writeln!(output, "            println!(\"Got message {{:?}}\",data);");
-        let msg_name = item
-            .name
-            .split("_")
-            .map(|x| x.to_lowercase())
-            .map(|x| {
-                let mut v: Vec<char> = x.chars().collect();
-                v[0] = v[0].to_uppercase().nth(0).unwrap();
-                v.into_iter().collect()
-            })
-            .collect::<Vec<String>>()
-            .join("");
-        writeln!(
-            output,
-            "            let mut inner = mavlink_common_proto::{}::new();",
-            msg_name
-        );
-
-        for field in &item.fields {
-            let mut field_name = field.name.clone();
-            if &field.name == "type" {
-                field_name = "mavtype".to_string();
-            }
-            let field_conversion;
-            match field.enumtype {
-                Some(ref enumtype) => {
-                    // we have an enum, have to get .value()
-                    // MavMode.from_i32(data.base_mode.into())
-                    let enumtype = enumtype
-                        .split("_")
-                        .map(|x| x.to_lowercase())
-                        .map(|x| {
-                            let mut v: Vec<char> = x.chars().collect();
-                            v[0] = v[0].to_uppercase().nth(0).unwrap();
-                            v.into_iter().collect()
-                        })
-                        .collect::<Vec<String>>()
-                        .join("");
-                    field_conversion = format!(
-                        "mavlink_common_proto::{}::from_i32(data.{}.into()).unwrap()",
-                        enumtype, field_name
-                    );
-                }
-                None => {
-                    // use only into() as we are converting a primitive data type
-                    field_conversion = mavtype_parser(&field.mavtype, &field_name);
-                    //field_conversion = format!("data.{}.into()",mavtype_parser(&field.mavtype));
-                }
-            } //
-            writeln!(
-                output,
-                "            inner.set_{}({});",
-                field_name, field_conversion
-            );
-        }
-
-        writeln!(
-            output,
-            "            assert!(inner.is_initialized());
-            let mut stream = protobuf::stream::CodedOutputStream::vec(&mut msg_data);
-            inner.write_to_with_cached_sizes(&mut stream).unwrap();
-        }}"
-        );
-    }
-
-    writeln!(
-        output,
-        "    }}
-    proto.set_msg_id(id.into());
-    proto.set_msg_data(msg_data);
-    assert!(proto.is_initialized());
-    proto
-}}"
-    );
-}
-*/
-/*
-#[allow(unused_must_use)] // TODO fix
-pub fn generate_mod<R: Read, W: Write>(input: &mut R, output: &mut W) {
-    let profile = parse_profile(input);
-
-    // writeln!(output, "#![allow(non_camel_case_types)]");
-    // writeln!(output, "#![allow(non_snake_case)]");
-    // writeln!(output, "");
-
-    writeln!(output, "use std::io::Cursor;");
-    writeln!(
-        output,
-        "use byteorder::{{LittleEndian, ReadBytesExt, WriteBytesExt}};"
-    );
-    writeln!(output, "");
-
-    writeln!(output, "pub trait Parsable {{");
-    writeln!(output, "    fn parse(payload: &[u8]) -> Self;");
-    writeln!(output, "    fn serialize(&self) -> Vec<u8>;");
-    writeln!(output, "}}");
-    writeln!(output, "");
-
-    for item in &profile.messages {
-        let mut f = item.fields.clone();
-        f.sort_by(|a, b| a.mavtype.compare(&b.mavtype));
-
-        writeln!(output, "#[derive(Clone, Debug)]");
-        writeln!(output, "pub struct {}_DATA {{", item.name);
-        for field in &f {
-            let fname = if field.name == "type" {
-                "mavtype".into()
-            } else {
-                field.name.clone()
-            };
-
-            writeln!(output, "    pub {}: {},", fname, field.mavtype.rust_type());
-        }
-        writeln!(output, "}}");
-        writeln!(output, "");
-
-        writeln!(output, "impl Parsable for {}_DATA {{", item.name);
-        writeln!(
-            output,
-            "    fn parse(payload: &[u8]) -> {}_DATA {{",
-            item.name
-        );
-        writeln!(output, "        let mut cur = Cursor::new(payload);");
-        writeln!(output, "        {}_DATA {{", item.name);
-        for field in &f {
-            let fname = if field.name == "type" {
-                "mavtype".into()
-            } else {
-                field.name.clone()
-            };
-            match field.mavtype {
-                MavType::Char | MavType::UInt8 | MavType::Int8 | MavType::UInt8MavlinkVersion => {
-                    writeln!(
-                        output,
-                        "            {}: cur.read_{}().unwrap(),",
-                        fname,
-                        field.mavtype.rust_type()
-                    );
-                }
-                MavType::Array(ref t, size) => {
-                    writeln!(output, "            {}: vec![", fname);
-                    for _ in 0..size {
-                        match *t.clone() {
-                            MavType::Char
-                            | MavType::UInt8
-                            | MavType::Int8
-                            | MavType::UInt8MavlinkVersion => {
-                                println!("                cur.read_{}().unwrap(),", t.rust_type());
-                            }
-                            MavType::Array(_, _) => {
-                                panic!("error");
-                            }
-                            _ => {
-                                println!(
-                                    "                cur.read_{}::<LittleEndian>().unwrap(),",
-                                    t.rust_type()
-                                );
-                            }
-                        }
-                    }
-                    writeln!(output, "            ],");
-                }
-                _ => {
-                    writeln!(
-                        output,
-                        "            {}: cur.read_{}::<LittleEndian>().unwrap(),",
-                        fname,
-                        field.mavtype.rust_type()
-                    );
-                }
-            }
-        }
-        writeln!(output, "        }}");
-        writeln!(output, "    }}");
-        writeln!(output, "    fn serialize(&self) -> Vec<u8> {{");
-        writeln!(output, "        let mut wtr = vec![];");
-        for field in &f {
-            let fname = if field.name == "type" {
-                "mavtype".into()
-            } else {
-                field.name.clone()
-            };
-            match field.mavtype {
-                MavType::Char | MavType::UInt8 | MavType::Int8 | MavType::UInt8MavlinkVersion => {
-                    writeln!(
-                        output,
-                        "        wtr.write_{}(self.{}).unwrap();",
-                        field.mavtype.rust_type(),
-                        fname
-                    );
-                }
-                MavType::Array(ref t, size) => {
-                    for i in 0..size {
-                        match *t.clone() {
-                            MavType::Char
-                            | MavType::UInt8
-                            | MavType::Int8
-                            | MavType::UInt8MavlinkVersion => {
-                                writeln!(
-                                    output,
-                                    "        wtr.write_{}(self.{}[{}]).unwrap();",
-                                    t.rust_type(),
-                                    fname,
-                                    i
-                                );
-                            }
-                            MavType::Array(_, _) => {
-                                panic!("error");
-                            }
-                            _ => {
-                                writeln!(
-                                    output,
-                                    "        wtr.write_{}::<LittleEndian>(self.{}[{}]).\
-                                     unwrap();",
-                                    t.rust_type(),
-                                    fname,
-                                    i
-                                );
-                            }
-                        }
-                    }
-                }
-                _ => {
-                    writeln!(
-                        output,
-                        "        wtr.write_{}::<LittleEndian>(self.{}).unwrap();",
-                        field.mavtype.rust_type(),
-                        fname
-                    );
-                }
-            }
-        }
-        writeln!(output, "        wtr");
-        writeln!(output, "    }}");
-        writeln!(output, "}}");
-        writeln!(output, "");
-    }
-
-    writeln!(output, "#[derive(Clone, Debug)]");
-    writeln!(output, "pub enum MavMessage {{");
-    for item in &profile.messages {
-        writeln!(output, "  {}({}_DATA),", item.name, item.name);
-    }
-    writeln!(output, "}}");
-    writeln!(output, "");
-
-    writeln!(output, "impl MavMessage {{");
-    writeln!(
-        output,
-        "    pub fn parse(id: u8, payload: &[u8]) -> Option<MavMessage> {{"
-    );
-    writeln!(output, "        match id {{");
-    for item in &profile.messages {
-        writeln!(
-            output,
-            "            {} => Some(MavMessage::{}({}_DATA::parse(payload))),",
-            item.id, item.name, item.name
-        );
-    }
-    writeln!(output, "            _ => None,");
-    writeln!(output, "        }}");
-    writeln!(output, "    }}");
-    writeln!(output, "");
-    writeln!(output, "    pub fn message_id(&self) -> u8 {{");
-    writeln!(output, "        match self {{");
-    for item in &profile.messages {
-        writeln!(
-            output,
-            "            &MavMessage::{}(..) => {},",
-            item.name, item.id
-        );
-    }
-    writeln!(output, "        }}");
-    writeln!(output, "    }}");
-    writeln!(output, "");
-    writeln!(output, "    pub fn extra_crc(id: u8) -> u8 {{");
-    writeln!(output, "        match id {{");
-    for item in &profile.messages {
-        writeln!(output, "            {} => {},", item.id, extra_crc(item));
-    }
-    writeln!(output, "            _ => 0,");
-    writeln!(output, "        }}");
-    writeln!(output, "    }}");
-    writeln!(output, "");
-    writeln!(output, "    pub fn serialize(&self) -> Vec<u8> {{");
-    writeln!(output, "        match self {{");
-    for item in &profile.messages {
-        writeln!(
-            output,
-            "            &MavMessage::{}(ref body) => body.serialize(),",
-            item.name
-        );
-    }
-    writeln!(output, "        }}");
-    writeln!(output, "    }}");
-    writeln!(output, "}}");
-    writeln!(output, "");
-}
-*/
