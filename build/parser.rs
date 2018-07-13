@@ -144,9 +144,13 @@ impl MavMessage {
                 let nametype = field.emit_name_type();
                 let val = Ident::from(format!("\"{}\"", cnt));
                 let proto_type = Ident::from(field.mavtype.proto_type());
+                let field_rule = match field.mavtype {
+                    MavType::Array(_, _) => Ident::from(format!("repeated")),
+                    _ => Ident::from(format!("required")),
+                };
                 cnt += 1;
                 quote!{
-                    #[prost(#proto_type, required, tag= #val )]
+                    #[prost(#proto_type, #field_rule, tag= #val )]
                     #nametype
                 }
             })
@@ -248,7 +252,7 @@ impl MavMessage {
                 match msg_field.enumtype {
                     Some(ref enumtype) => {
                         // TODO: generate enums too
-                        let _enum_name = enumtype;/*
+                        let _enum_name = enumtype; /*
                             .split("_")
                             .map(|x| x.to_lowercase())
                             .map(|x| {
@@ -336,6 +340,7 @@ fn parse_type(s: &str) -> Option<MavType> {
 }
 
 impl MavType {
+    /// Size of a given Mavtype
     fn len(&self) -> usize {
         use parser::MavType::*;
         match self.clone() {
@@ -347,6 +352,7 @@ impl MavType {
         }
     }
 
+    /// Used for ordering of types
     fn order_len(&self) -> usize {
         use parser::MavType::*;
         match self.clone() {
@@ -358,6 +364,7 @@ impl MavType {
         }
     }
 
+    /// Used for crc calculation
     pub fn primitive_type(&self) -> String {
         use parser::MavType::*;
         match self.clone() {
@@ -377,7 +384,26 @@ impl MavType {
         }
     }
 
+    /// Return rust equivalent of a given Mavtype
+    /// Used for generating struct fields.
+    /// Note, the smallest type is u32 to make it compatible
+    /// with protobuf protocol
     pub fn rust_type(&self) -> String {
+        use parser::MavType::*;
+        match self.clone() {
+            UInt8 | UInt8MavlinkVersion | Char | UInt16 | UInt32 => "u32".into(),
+            Int8 | Int16 | Int32 => "i32".into(),
+            Float => "f32".into(),
+            UInt64 => "u64".into(),
+            Int64 => "i64".into(),
+            Double => "f64".into(),
+            // Buffer(n) => "u8".into(),
+            Array(t, size) => format!("Vec<{}> /* {} */", t.rust_type(), size),
+        }
+    }
+
+    /// Emit the type for serialization/deserialization
+    pub fn rust_serde_type(&self) -> String {
         use parser::MavType::*;
         match self.clone() {
             UInt8 | UInt8MavlinkVersion => "u8".into(),
@@ -392,10 +418,12 @@ impl MavType {
             Int64 => "i64".into(),
             Double => "f64".into(),
             // Buffer(n) => "u8".into(),
-            Array(t, size) => format!("Vec<{}> /* {} */", t.rust_type(), size),
+            Array(t, size) => format!("Vec<{}> /* {} */", t.rust_serde_type(), size),
         }
     }
 
+    /// Return protobuf equivalent of a given Mavtype
+    /// Used for generating *.proto files
     pub fn proto_type(&self) -> String {
         use parser::MavType::*;
         match self {
@@ -406,10 +434,9 @@ impl MavType {
             Int64 => "int64".into(),
             Double => "double".into(),
             Array(t, _) => match *t.clone() {
-                UInt8MavlinkVersion | Char | UInt8 | Int8 => "bytes".into(),
                 Array(_, _) => panic!("Error matching Mavtype"),
-                UInt16 | UInt32 => "uint32".into(),
-                Int16 | Int32 => "int32".into(),
+                UInt8MavlinkVersion | Char | UInt8 | UInt16 | UInt32 => "uint32".into(),
+                Int8 | Int16 | Int32 => "int32".into(),
                 Float => "float".into(),
                 UInt64 => "uint64".into(),
                 Int64 => "int64".into(),
@@ -418,6 +445,7 @@ impl MavType {
         }
     }
 
+    /// Compare two MavTypes
     pub fn compare(&self, other: &Self) -> Ordering {
         let len = self.order_len();
         (-(len as isize)).cmp(&(-(other.order_len() as isize)))
@@ -478,30 +506,51 @@ impl MavField {
         let name = self.emit_name();
         let mut writer = quote!();
         match self.mavtype {
+            // we have to downcast to smaller types (u8/i8)
             MavType::Char | MavType::UInt8 | MavType::Int8 | MavType::UInt8MavlinkVersion => {
-                let write = Ident::from(format!("write_{}", self.mavtype.rust_type()));
+                let write = Ident::from(format!("write_{}", self.mavtype.rust_serde_type()));
+                let cast_to = Ident::from(format!("{}", self.mavtype.rust_serde_type()));
                 writer = quote!{
-                    wtr.#write(self.#name).unwrap();
+                    wtr.#write(self.#name as #cast_to).unwrap();
+                };
+            }
+            // we have to downcast to smaller types (u16/i16)
+            MavType::UInt16 | MavType::Int16 => {
+                let write = Ident::from(format!("write_{}", self.mavtype.rust_serde_type()));
+                let cast_to = Ident::from(format!("{}", self.mavtype.rust_serde_type()));
+                writer = quote!{
+                    wtr.#write::<LittleEndian>(self.#name as #cast_to).unwrap();
                 };
             }
             MavType::Array(ref t, size) => {
                 for idx in 0..size {
                     match *t.clone() {
+                        // we have to downcast to a smaller type (u8/i8)
                         MavType::Char
                         | MavType::UInt8
                         | MavType::Int8
                         | MavType::UInt8MavlinkVersion => {
-                            let write = Ident::from(format!("write_{}", t.rust_type()));
+                            let write = Ident::from(format!("write_{}", t.rust_serde_type()));
+                            let cast_to = Ident::from(format!("{}", t.rust_serde_type()));
                             let index = Ident::from(idx.to_string());
                             writer.append(quote!{
-                                    wtr.#write(self.#name[#index]).unwrap();
+                                    wtr.#write(self.#name[#index] as #cast_to).unwrap();
+                            });
+                        }
+                        // we have to downcast to a smaller type (u8/i8)
+                        MavType::Int16 | MavType::UInt16 => {
+                            let write = Ident::from(format!("write_{}", t.rust_serde_type()));
+                            let cast_to = Ident::from(format!("{}", t.rust_serde_type()));
+                            let index = Ident::from(idx.to_string());
+                            writer.append(quote!{
+                                    wtr.#write::<LittleEndian>(self.#name[#index] as #cast_to).unwrap();
                             });
                         }
                         MavType::Array(_, _) => {
                             panic!("error");
                         }
                         _ => {
-                            let write = Ident::from(format!("write_{}", t.rust_type()));
+                            let write = Ident::from(format!("write_{}", t.rust_serde_type()));
                             let index = Ident::from(idx.to_string());
                             writer.append(quote!{
                                 wtr.#write::<LittleEndian>(self.#name[#index]).unwrap();
@@ -511,7 +560,7 @@ impl MavField {
                 }
             }
             _ => {
-                let write = Ident::from(format!("write_{}", self.mavtype.rust_type()));
+                let write = Ident::from(format!("write_{}", self.mavtype.rust_serde_type()));
                 writer = quote!{
                     wtr.#write::<LittleEndian>(self.#name).unwrap();
                 };
@@ -525,9 +574,10 @@ impl MavField {
         let reader;
         match self.mavtype {
             MavType::Char | MavType::UInt8 | MavType::Int8 | MavType::UInt8MavlinkVersion => {
-                let read = Ident::from(format!("read_{}", self.mavtype.rust_type()));
+                let read = Ident::from(format!("read_{}", self.mavtype.rust_serde_type()));
+                let cast_to = Ident::from(format!("{}", self.mavtype.rust_type()));
                 reader = quote!{
-                    #name : cur. #read ().unwrap(),
+                    #name : cur. #read ().unwrap() as #cast_to,
                 };
             }
             MavType::Array(ref t, size) => {
@@ -537,30 +587,32 @@ impl MavField {
                     | MavType::UInt8
                     | MavType::Int8
                     | MavType::UInt8MavlinkVersion => {
-                        read = Ident::from(format!("read_{}", t.rust_type()));
+                        read = Ident::from(format!("read_{}", t.rust_serde_type()));
                     }
                     MavType::Array(_, _) => {
                         panic!("error parsing message field");
                     }
                     _ => {
-                        read = Ident::from(format!("read_{}::<LittleEndian>", t.rust_type()));
+                        read = Ident::from(format!("read_{}::<LittleEndian>", t.rust_serde_type()));
                     }
                 }
                 let size = Ident::from(size.to_string());
+                let cast_to = Ident::from(format!("{}", t.rust_type()));
                 reader = quote!{
                     #name: {
                         let mut v = Vec::with_capacity(#size);
                         for _ in 0..#size {
-                            v.push(cur.#read().unwrap());
+                            v.push(cur.#read().unwrap() as #cast_to);
                         }
                         v
                     },
                 };
             }
             _ => {
-                let read = Ident::from(format!("read_{}", self.mavtype.rust_type()));
+                let read = Ident::from(format!("read_{}", self.mavtype.rust_serde_type()));
+                let cast_to = Ident::from(format!("{}", self.mavtype.rust_type()));
                 reader = quote!{
-                    #name : cur. #read::<LittleEndian> ().unwrap(),
+                    #name : cur. #read::<LittleEndian> ().unwrap() as #cast_to,
                 };
             }
         }
@@ -733,6 +785,43 @@ impl MavProfile {
             .collect::<Vec<Tokens>>()
     }
 
+    /// A list of tags for the encompassing Mavlink proto message
+    fn emit_msg_tags(&self) -> Tokens {
+        let mut tags = vec![];
+        let id = Ident::from("\"");
+        tags.push(quote!(#id));
+        
+        for idx in 0..self.messages.len() {
+            let id = Ident::from((idx+1).to_string());
+            tags.push(quote!(#id));
+            let id = Ident::from(format!(","));
+            tags.push(quote!(#id));
+        }
+        tags.pop();
+        let id = Ident::from("\"");
+        tags.push(quote!(#id));
+        
+        quote!(#(#tags)*)
+    }
+
+    /// Emit enum for the encomassing one-of Mavlink proto message
+    fn emit_msg_set(&self) -> Vec<Tokens> {
+        let mut cnt = 1;
+        self.messages
+            .iter()
+            .map(|msg| {
+                let nametype = Ident::from(format!("{}",msg.name));
+                let nametype_data = Ident::from(format!("{}Data",msg.name));
+                let val = Ident::from(format!("\"{}\"", cnt));
+                cnt += 1;
+                quote!{
+                    #[prost(message, tag= #val)]
+                    #nametype (super::#nametype_data),
+                }
+            })
+            .collect::<Vec<Tokens>>()
+    }
+
     /// CRC values needed for mavlink parsing
     fn emit_msg_crc(&self) -> Vec<Tokens> {
         self.messages
@@ -756,6 +845,8 @@ impl MavProfile {
             self.emit_mav_message_parse(enum_names.clone(), struct_names, msg_ids.clone());
         let mav_message_id = self.emit_mav_message_id(enum_names.clone(), msg_ids.clone());
         let mav_message_serialize = self.emit_mav_message_serialize(enum_names);
+        let protobuf_msg_tags = self.emit_msg_tags();
+        let protobuf_msg_set = self.emit_msg_set();
 
         quote!{
             #comment
@@ -766,6 +857,9 @@ impl MavProfile {
             // Serde imports are needed to handle parsing null fields in JSON
             use serde::Deserializer;
             use serde::de::Deserialize;
+            
+            // To encode and decode messages
+            use prost::Message;
 
             // replace Null with NAN
             use std::{f32,f64};
@@ -794,7 +888,8 @@ impl MavProfile {
 
             #(#msgs)*
 
-            #[derive(Clone, PartialEq)]
+            // Below are defines for Mavlink part only
+            #[derive(Clone, PartialEq, Debug)]
             #[derive(Serialize)]
             #mav_message
 
@@ -809,6 +904,42 @@ impl MavProfile {
                     }
                 }
             }
+            // End of mavlink only part
+
+            // Below are defines for Protobuf part only
+            #[derive(Clone, PartialEq, Message)]
+            #[derive(Serialize,Deserialize)]
+            pub struct MavlinkMessage {
+                #[prost(oneof="mavlink_message::MsgSet", tags= #protobuf_msg_tags)]
+                pub msg_set: ::std::option::Option<mavlink_message::MsgSet>,
+            }
+
+            pub mod mavlink_message {
+                #[derive(Clone, Oneof, PartialEq)]
+                #[derive(Serialize,Deserialize)]
+                pub enum MsgSet {
+                    #(#protobuf_msg_set)*
+                }
+            }
+            // End of protobuf only part
+            
+            // Interoperability between protobuf and regular mavlink
+            impl MavMessage {
+                // Converts an enum variant into a proto message
+                pub fn encode(&self) -> Vec<u8> {
+                    match &self {
+                        &MavMessage::Heartbeat(ref body) => {
+                            let mut buf = Vec::new();
+                            buf.reserve(body.encoded_len());
+                            // Unwrap is safe, since we have reserved sufficient capacity in the vector.
+                            body.encode(&mut buf).unwrap();
+                            buf
+                        },
+                        _ => vec![]
+                    }
+                }
+            }
+            // end of the interop part
         }
     }
 
@@ -984,18 +1115,19 @@ pub fn parse_profile(file: &mut Read) -> MavProfile {
                                     field.mavtype = parse_type(&attr.value).unwrap();
                                 }
                                 "enum" => {
-                                    field.enumtype = Some(attr
-                                        .value
-                                        .clone()
-                                        .split("_")
-                                        .map(|x| x.to_lowercase())
-                                        .map(|x| {
-                                            let mut v: Vec<char> = x.chars().collect();
-                                            v[0] = v[0].to_uppercase().nth(0).unwrap();
-                                            v.into_iter().collect()
-                                        })
-                                        .collect::<Vec<String>>()
-                                        .join(""));
+                                    field.enumtype = Some(
+                                        attr.value
+                                            .clone()
+                                            .split("_")
+                                            .map(|x| x.to_lowercase())
+                                            .map(|x| {
+                                                let mut v: Vec<char> = x.chars().collect();
+                                                v[0] = v[0].to_uppercase().nth(0).unwrap();
+                                                v.into_iter().collect()
+                                            })
+                                            .collect::<Vec<String>>()
+                                            .join(""),
+                                    );
                                     //field.enumtype = Some(attr.value.clone());
                                 }
                                 _ => (),
@@ -1098,7 +1230,7 @@ pub fn generate<R: Read, W: Write>(input: &mut R, output_proto: &mut W, output_r
     cfg.set().write_mode(rustfmt::config::WriteMode::Display);
     rustfmt::format_input(rustfmt::Input::Text(rust_src), &cfg, Some(output_rust)).unwrap();
 }
-
+// TODO: CHECK CRC?!
 pub fn extra_crc(msg: &MavMessage) -> u8 {
     // calculate a 8-bit checksum of the key fields of a message, so we
     // can detect incompatible XML changes

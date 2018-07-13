@@ -2,6 +2,15 @@ extern crate mavlink_proto;
 extern crate zmq;
 extern crate serde_json;
 
+extern crate prost;
+
+/*
+#[macro_use]
+extern crate serde_derive;
+extern crate serde;
+extern crate serde_json;
+*/
+
 use std::env;
 use std::sync::Arc;
 use std::thread;
@@ -17,8 +26,11 @@ fn main() {
     }
 
     let vehicle = Arc::new(mavlink_proto::connect(&args[1]).unwrap());
-    let context = zmq::Context::new();
 
+//    let context = zmq::Context::new();
+
+
+    /*
     thread::spawn({
         let vehicle = vehicle.clone();
         let subscriber = context.socket(zmq::SUB).unwrap();
@@ -34,16 +46,26 @@ fn main() {
             vehicle.send(&msg).ok();
         }
     });
+    */
 
     // TX thread
-    let publisher = context.socket(zmq::PUB).unwrap();
-    assert!(publisher.bind("tcp://*:5556").is_ok());
-    assert!(publisher.bind("ipc://mavlink.ipc").is_ok());
+    
+    //let publisher = context.socket(zmq::PUB).unwrap();
+    //assert!(publisher.bind("tcp://*:5556").is_ok());
+    //assert!(publisher.bind("ipc://mavlink.ipc").is_ok());
+
+    println!("Listening");
     loop {
-        if let Ok(msg) = vehicle.recv() {
+        if let Ok(msg) = vehicle.recv() { // this gets a regular mavlink message
+            println!("Got data");
+            println!("Received={:?}",msg);
+            //println!("Encoding msg = {:?}",msg.encode());
+            
+        /*
             let stream = serde_json::to_string(&msg).unwrap();
             println!("Sending msg = {}",stream);
             publisher.send(stream.as_bytes(), 0).unwrap(); // send &w with 0 flags
+            */
         }
     }
 }

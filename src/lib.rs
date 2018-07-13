@@ -63,10 +63,14 @@ pub fn read<R: Read>(r: &mut R) -> io::Result<(Header, MavMessage)> {
         crc_calc.update(&[len as u8, seq, sysid, compid, msgid]);
         crc_calc.update(payload);
         crc_calc.update(&[MavMessage::extra_crc(msgid)]);
+        println!("Checking crc");
+        println!("crc_calc.get() {} != crc {}", crc_calc.get() , crc);
         if crc_calc.get() != crc {
+            println!("Bad crc");
             continue;
         }
         
+        println!("Parsing msg");
         if let Some(msg) = MavMessage::parse(msgid, payload) {
             return Ok((Header { sequence: seq, system_id: sysid, component_id: compid }, msg));
         }
