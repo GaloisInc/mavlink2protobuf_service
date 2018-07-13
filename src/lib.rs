@@ -6,15 +6,17 @@ extern crate prost_derive;
 extern crate byteorder;
 extern crate crc16;
 extern crate serial;
-
-use std::io;
-use byteorder::{ LittleEndian, ReadBytesExt, WriteBytesExt };
-use std::io::prelude::*;
+extern crate range_check;
 
 #[macro_use]
 extern crate serde_derive;
 extern crate serde;
 extern crate serde_json;
+
+use std::io;
+use byteorder::{ LittleEndian, ReadBytesExt, WriteBytesExt };
+use std::io::prelude::*;
+
 
 mod connection;
 pub use connection::{ MavConnection, Tcp, Udp, Serial, connect };

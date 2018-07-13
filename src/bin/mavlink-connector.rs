@@ -27,7 +27,6 @@ fn main() {
         let filter = "";
         assert!(subscriber.connect("tcp://localhost:5555").is_ok());
         assert!(subscriber.set_subscribe(filter.as_bytes()).is_ok());
-        println!("Waiting for data...");
 
         move || loop {
             /*
@@ -51,7 +50,7 @@ fn main() {
 
     loop {
         if let Ok(msg) = vehicle.recv() { // this gets a regular mavlink message
-            println!("{:?}", msg);
+            //println!("{:?}", msg);
             publisher.send(&msg.encode(), 0).unwrap(); // send &w with 0 flags
             /*
             // For JSON data

@@ -502,6 +502,7 @@ impl MavField {
         }
     }
 
+    /// Emit rust code for handling serialization of the message over wire (to the Autopilot)
     fn emit_writer(&self) -> Tokens {
         let name = self.emit_name();
         let mut writer = quote!();
@@ -510,16 +511,10 @@ impl MavField {
             MavType::Char | MavType::UInt8 | MavType::Int8 | MavType::UInt8MavlinkVersion => {
                 let write = Ident::from(format!("write_{}", self.mavtype.rust_serde_type()));
                 let cast_to = Ident::from(format!("{}", self.mavtype.rust_serde_type()));
+                let rust_type = Ident::from(format!("{}", self.mavtype.rust_type())); 
                 writer = quote!{
+                    assert!(self.#name.is_within(#cast_to::min_value() as #rust_type..#cast_to::max_value() as #rust_type));
                     wtr.#write(self.#name as #cast_to).unwrap();
-                };
-            }
-            // we have to downcast to smaller types (u16/i16)
-            MavType::UInt16 | MavType::Int16 => {
-                let write = Ident::from(format!("write_{}", self.mavtype.rust_serde_type()));
-                let cast_to = Ident::from(format!("{}", self.mavtype.rust_serde_type()));
-                writer = quote!{
-                    wtr.#write::<LittleEndian>(self.#name as #cast_to).unwrap();
                 };
             }
             MavType::Array(ref t, size) => {
@@ -532,18 +527,11 @@ impl MavField {
                         | MavType::UInt8MavlinkVersion => {
                             let write = Ident::from(format!("write_{}", t.rust_serde_type()));
                             let cast_to = Ident::from(format!("{}", t.rust_serde_type()));
+                            let rust_type = Ident::from(format!("{}", t.rust_type()));
                             let index = Ident::from(idx.to_string());
                             writer.append(quote!{
+                                    assert!(self.#name[#index].is_within(#cast_to::min_value() as #rust_type..#cast_to::max_value() as #rust_type));
                                     wtr.#write(self.#name[#index] as #cast_to).unwrap();
-                            });
-                        }
-                        // we have to downcast to a smaller type (u8/i8)
-                        MavType::Int16 | MavType::UInt16 => {
-                            let write = Ident::from(format!("write_{}", t.rust_serde_type()));
-                            let cast_to = Ident::from(format!("{}", t.rust_serde_type()));
-                            let index = Ident::from(idx.to_string());
-                            writer.append(quote!{
-                                    wtr.#write::<LittleEndian>(self.#name[#index] as #cast_to).unwrap();
                             });
                         }
                         MavType::Array(_, _) => {
@@ -551,9 +539,10 @@ impl MavField {
                         }
                         _ => {
                             let write = Ident::from(format!("write_{}", t.rust_serde_type()));
+                            let cast_to = Ident::from(format!("{}", t.rust_serde_type()));
                             let index = Ident::from(idx.to_string());
                             writer.append(quote!{
-                                wtr.#write::<LittleEndian>(self.#name[#index]).unwrap();
+                                wtr.#write::<LittleEndian>(self.#name[#index] as #cast_to).unwrap();
                             });
                         }
                     }
@@ -561,8 +550,9 @@ impl MavField {
             }
             _ => {
                 let write = Ident::from(format!("write_{}", self.mavtype.rust_serde_type()));
+                let cast_to = Ident::from(format!("{}", self.mavtype.rust_serde_type()));
                 writer = quote!{
-                    wtr.#write::<LittleEndian>(self.#name).unwrap();
+                    wtr.#write::<LittleEndian>(self.#name as #cast_to).unwrap();
                 };
             }
         }
@@ -877,6 +867,9 @@ impl MavProfile {
 
             // To encode and decode messages
             use prost::Message;
+            
+            // To check ranges for sending bytes to the autopilot (u32/i32 -> u8/i8 conversion)
+            use range_check::Within;
 
             // replace Null with NAN
             use std::{f32,f64};
