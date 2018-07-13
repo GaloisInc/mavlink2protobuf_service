@@ -133,7 +133,7 @@ impl MavMessage {
     /// Return Token of "MESSAGE_NAME_DATA
     /// for mavlink struct data
     fn emit_struct_name(&self) -> Tokens {
-        let name = Ident::from(format!("{}Data", self.name));
+        let name = Ident::from(format!("{}_DATA", self.name));
         quote!(#name)
     }
     fn emit_name_types(&self) -> Vec<Tokens> {
@@ -766,11 +766,22 @@ impl MavProfile {
             .collect::<Vec<Tokens>>()
     }
 
-    ///
+    /// Emit message names with "_DATA" at the end
     fn emit_struct_names(&self) -> Vec<Tokens> {
         self.messages
             .iter()
             .map(|msg| msg.emit_struct_name())
+            .collect::<Vec<Tokens>>()
+    }
+
+    /// Emit message names
+    fn emit_msg_names(&self) -> Vec<Tokens> {
+        self.messages
+            .iter()
+            .map(|msg| {
+                    let name = Ident::from(msg.name.clone());
+                    quote!(#name)
+            })
             .collect::<Vec<Tokens>>()
     }
 
@@ -790,9 +801,9 @@ impl MavProfile {
         let mut tags = vec![];
         let id = Ident::from("\"");
         tags.push(quote!(#id));
-        
+
         for idx in 0..self.messages.len() {
-            let id = Ident::from((idx+1).to_string());
+            let id = Ident::from((idx + 1).to_string());
             tags.push(quote!(#id));
             let id = Ident::from(format!(","));
             tags.push(quote!(#id));
@@ -800,18 +811,18 @@ impl MavProfile {
         tags.pop();
         let id = Ident::from("\"");
         tags.push(quote!(#id));
-        
+
         quote!(#(#tags)*)
     }
 
-    /// Emit enum for the encomassing one-of Mavlink proto message
+    /// Emit enum for the encompassing one-of Mavlink proto message
     fn emit_msg_set(&self) -> Vec<Tokens> {
         let mut cnt = 1;
         self.messages
             .iter()
             .map(|msg| {
-                let nametype = Ident::from(format!("{}",msg.name));
-                let nametype_data = Ident::from(format!("{}Data",msg.name));
+                let nametype = Ident::from(format!("{}", msg.name));
+                let nametype_data = Ident::from(format!("{}_DATA", msg.name));
                 let val = Ident::from(format!("\"{}\"", cnt));
                 cnt += 1;
                 quote!{
@@ -838,11 +849,17 @@ impl MavProfile {
         let msgs = self.emit_msgs();
         let enum_names = self.emit_enum_names();
         let struct_names = self.emit_struct_names();
+        
+        let msg_names = self.emit_msg_names();
+        let proto_struct_names = msg_names.clone();
+        let decode_msg_names = msg_names.clone();
+        let decode_proto_struct_names = msg_names.clone();
+        
         let msg_ids = self.emit_msg_ids();
         let msg_crc = self.emit_msg_crc();
         let mav_message = self.emit_mav_message(enum_names.clone(), struct_names.clone());
         let mav_message_parse =
-            self.emit_mav_message_parse(enum_names.clone(), struct_names, msg_ids.clone());
+            self.emit_mav_message_parse(enum_names.clone(), struct_names.clone(), msg_ids.clone());
         let mav_message_id = self.emit_mav_message_id(enum_names.clone(), msg_ids.clone());
         let mav_message_serialize = self.emit_mav_message_serialize(enum_names);
         let protobuf_msg_tags = self.emit_msg_tags();
@@ -857,7 +874,7 @@ impl MavProfile {
             // Serde imports are needed to handle parsing null fields in JSON
             use serde::Deserializer;
             use serde::de::Deserialize;
-            
+
             // To encode and decode messages
             use prost::Message;
 
@@ -922,20 +939,50 @@ impl MavProfile {
                 }
             }
             // End of protobuf only part
-            
+
             // Interoperability between protobuf and regular mavlink
             impl MavMessage {
-                // Converts an enum variant into a proto message
-                pub fn encode(&self) -> Vec<u8> {
-                    match &self {
-                        &MavMessage::Heartbeat(ref body) => {
-                            let mut buf = Vec::new();
-                            buf.reserve(body.encoded_len());
-                            // Unwrap is safe, since we have reserved sufficient capacity in the vector.
-                            body.encode(&mut buf).unwrap();
-                            buf
-                        },
-                        _ => vec![]
+                /// Convert MavMessage to a protobuf message
+                fn to_proto_msg(self) -> MavlinkMessage {
+                    let mut msg = MavlinkMessage::default();
+                    match self {
+                        #(MavMessage::#msg_names(body) => {msg.msg_set = Some(mavlink_message::MsgSet::#proto_struct_names(body));}, )*
+                    }
+                    msg
+                }
+                
+                /// Consume message and return its protobuf encoded representation
+                pub fn encode(self) -> Vec<u8> {
+                    let msg = self.to_proto_msg();
+                    let mut buf = Vec::new();
+                    buf.reserve(msg.encoded_len());
+                    msg.encode(&mut buf).unwrap();
+                    buf
+                }
+
+                /// Consume message and return its JSON representation
+                pub fn to_json(self) -> String {
+                    let msg = self.to_proto_msg();
+                    serde_json::to_string(&msg).unwrap()
+                }
+                
+                /// Reconstruct a MavMessage from JSON Protobuf representation
+                #[allow(dead_code)]
+                fn from_json() -> Result<MavMessage, prost::DecodeError> {
+                    panic!("unimplemented")
+                }
+                
+                /// Reconstruct a MavMesage from a protobuf encoded stream
+                pub fn from_proto_msg(stream: Vec<u8>) -> Result<MavMessage, prost::DecodeError> {
+                    let proto_msg = MavlinkMessage::decode(&mut Cursor::new(stream))?;
+                    if let Some(msg) = proto_msg.msg_set {
+                        match msg {
+                            //mavlink_message::MsgSet::HEARTBEAT(body) => Ok(MavMessage::HEARTBEAT(body)),
+                            //_ => panic!("unknown msh"), 
+                            #( mavlink_message::MsgSet::#decode_proto_struct_names(body) => Ok(MavMessage::#decode_msg_names(body)),)*
+                        }
+                    } else {
+                        panic!("No message"); 
                     }
                 }
             }
@@ -1083,7 +1130,7 @@ pub fn parse_profile(file: &mut Read) -> MavProfile {
                         Some(&MavXmlElement::Message) => {
                             match attr.name.local_name.clone().as_ref() {
                                 "name" => {
-                                    message.name = attr
+                                    /*message.name = attr
                                         .value
                                         .clone()
                                         .split("_")
@@ -1095,7 +1142,8 @@ pub fn parse_profile(file: &mut Read) -> MavProfile {
                                         })
                                         .collect::<Vec<String>>()
                                         .join("");
-                                    //message.name = attr.value.clone();
+                                        */
+                                    message.name = attr.value.clone();
                                 }
                                 "id" => {
                                     message.id = attr.value.parse::<u8>().unwrap();
@@ -1230,7 +1278,12 @@ pub fn generate<R: Read, W: Write>(input: &mut R, output_proto: &mut W, output_r
     cfg.set().write_mode(rustfmt::config::WriteMode::Display);
     rustfmt::format_input(rustfmt::Input::Text(rust_src), &cfg, Some(output_rust)).unwrap();
 }
-// TODO: CHECK CRC?!
+
+/// CRC operates over names of the message and names of its fields
+/// Hence we have to preserve the original uppercase names delimited with an underscore
+/// For field names, we replace "type" with "mavtype" to make it rust compatible (this is
+/// needed for generating sensible rust code), but for calculating crc function we have to
+/// use the original name "type"
 pub fn extra_crc(msg: &MavMessage) -> u8 {
     // calculate a 8-bit checksum of the key fields of a message, so we
     // can detect incompatible XML changes
@@ -1243,7 +1296,11 @@ pub fn extra_crc(msg: &MavMessage) -> u8 {
     for field in &f {
         crc.update(field.mavtype.primitive_type().as_bytes());
         crc.update(" ".as_bytes());
-        crc.update(field.name.as_bytes());
+        if field.name == "mavtype" {
+            crc.update("type".as_bytes());
+        } else {
+            crc.update(field.name.as_bytes());
+        }
         crc.update(" ".as_bytes());
         if let MavType::Array(_, size) = field.mavtype {
             crc.update(&[size as u8]);

@@ -1,3 +1,4 @@
+#![feature(extern_prelude)]
 extern crate prost;
 #[macro_use]
 extern crate prost_derive;
@@ -19,12 +20,8 @@ mod connection;
 pub use connection::{ MavConnection, Tcp, Udp, Serial, connect };
 
 /// The MAVLink common message set
-///
-/// https://pixhawk.ethz.ch/mavlink/
 #[allow(non_camel_case_types)]
 #[allow(non_snake_case)]
-#[allow(unused_variables)]
-#[allow(unused_mut)]
 pub mod common {
     include!(concat!(env!("OUT_DIR"), "/common.rs"));
 }
@@ -63,14 +60,9 @@ pub fn read<R: Read>(r: &mut R) -> io::Result<(Header, MavMessage)> {
         crc_calc.update(&[len as u8, seq, sysid, compid, msgid]);
         crc_calc.update(payload);
         crc_calc.update(&[MavMessage::extra_crc(msgid)]);
-        println!("Checking crc");
-        println!("crc_calc.get() {} != crc {}", crc_calc.get() , crc);
         if crc_calc.get() != crc {
-            println!("Bad crc");
             continue;
         }
-        
-        println!("Parsing msg");
         if let Some(msg) = MavMessage::parse(msgid, payload) {
             return Ok((Header { sequence: seq, system_id: sysid, component_id: compid }, msg));
         }
