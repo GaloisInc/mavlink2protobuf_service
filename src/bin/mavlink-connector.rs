@@ -25,7 +25,12 @@ fn main() {
         let vehicle = vehicle.clone();
         let subscriber = context.socket(zmq::SUB).unwrap();
         let filter = "";
-        assert!(subscriber.connect("tcp://localhost:5555").is_ok());
+        match subscriber.connect("tcp://127.0.0.1:44441") {
+            Ok(_) => {}
+            Err(e) => {
+                println!("Error: {}", e);
+            }
+        }
         assert!(subscriber.set_subscribe(filter.as_bytes()).is_ok());
 
         move || loop {
@@ -43,13 +48,18 @@ fn main() {
         }
     });
 
-    // TX thread    
+    // TX thread
     let publisher = context.socket(zmq::PUB).unwrap();
-    assert!(publisher.bind("tcp://*:5556").is_ok());
-    assert!(publisher.bind("ipc://mavlink.ipc").is_ok());
+    match publisher.bind("tcp://127.0.0.1:44440") {
+        Ok(_) => {}
+        Err(e) => {
+            println!("Error: {}", e);
+        }
+    }
 
     loop {
-        if let Ok(msg) = vehicle.recv() { // this gets a regular mavlink message
+        if let Ok(msg) = vehicle.recv() {
+            // this gets a regular mavlink message
             //println!("{:?}", msg);
             publisher.send(&msg.encode(), 0).unwrap(); // send &w with 0 flags
             /*
@@ -57,7 +67,6 @@ fn main() {
             let stream = serde_json::to_string(&msg).unwrap();
             println!("Sending msg = {}",stream);
             publisher.send(stream.as_bytes(), 0).unwrap(); // send &w with 0 flags
-            */
-        }
+            */        }
     }
 }
