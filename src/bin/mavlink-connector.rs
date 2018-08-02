@@ -1,72 +1,93 @@
 extern crate mavlink_proto;
 extern crate zmq;
-/* For JSON data */
-//extern crate serde_json;
+#[macro_use]
+extern crate clap;
 
-use std::env;
+#[cfg(feature = "json")]
+extern crate serde_json;
+
 use std::sync::Arc;
 use std::thread;
 
+use clap::App;
+
 use mavlink_proto::common::*;
 
-/// Run with for example "cargo run -- udpin:127.0.0.1:14540"
+/// Run with for example "cargo run -- udpin:127.0.0.1:14540 tcp://127.0.0.1:4441 tcp://127.0.0.1:44440"
 fn main() {
-    let args: Vec<_> = env::args().collect();
+    // The YAML file is found relative to the current file, similar to how modules are found
+    let yaml = load_yaml!("../../cli.yml");
+    let matches = App::from_yaml(yaml).get_matches();
 
-    if args.len() < 2 {
-        println!("Usage: mavlink-connector (tcp|udpin|udpout|serial):(ip|dev):(port|baud)");
-        return;
-    }
-
-    let vehicle = Arc::new(mavlink_proto::connect(&args[1]).unwrap());
+    let device = matches.value_of("MAVLINK_DEVICE").unwrap();
+    println!("Mavlink connecting to {}", device);
+    let vehicle = Arc::new(mavlink_proto::connect(device).unwrap());
     let context = zmq::Context::new();
 
     thread::spawn({
         let vehicle = vehicle.clone();
         let subscriber = context.socket(zmq::SUB).unwrap();
         let filter = "";
-        match subscriber.connect("tcp://127.0.0.1:44441") {
-            Ok(_) => {}
+        let addr = matches.value_of("ADDR_SUB").unwrap();
+
+        match subscriber.connect(addr) {
+            Ok(_) => {
+                println!("Subscriber: connected to {}", addr);
+            }
             Err(e) => {
-                println!("Error: {}", e);
+                println!("Subscriber error: {} connecting to {}", e, addr);
             }
         }
         assert!(subscriber.set_subscribe(filter.as_bytes()).is_ok());
 
         move || loop {
-            /*
-            // For JSON data
-            let stream = subscriber.recv_string(0).unwrap().unwrap();
-            println!("Received msg = {}",stream);
-            let msg: MavMessage = serde_json::from_str(&stream).unwrap();
-            vehicle.send(&msg).ok();
-            */
-            let stream = subscriber.recv_bytes(0).unwrap();
-            println!("Received {} bytes", stream.len());
-            let msg = MavMessage::from_proto_msg(stream).unwrap();
-            vehicle.send(&msg).unwrap();
+            #[cfg(feature = "json")]
+            {
+                // For JSON data
+                let stream = subscriber.recv_string(0).unwrap().unwrap();
+                println!("Received msg = {}", stream);
+                let msg: MavMessage = serde_json::from_str(&stream).unwrap();
+                vehicle.send(&msg).ok();
+            }
+
+            #[cfg(not(feature = "json"))]
+            {
+                let stream = subscriber.recv_bytes(0).unwrap();
+                println!("Received {} bytes", stream.len());
+                let msg = MavMessage::from_proto_msg(stream).unwrap();
+                vehicle.send(&msg).unwrap();
+            }
         }
     });
 
     // TX thread
     let publisher = context.socket(zmq::PUB).unwrap();
-    match publisher.bind("tcp://127.0.0.1:44440") {
-        Ok(_) => {}
+    let addr = matches.value_of("ADDR_PUB").unwrap();
+    match publisher.bind(addr) {
+        Ok(_) => {
+            println!("Publisher: bound to {}", addr);
+        }
         Err(e) => {
-            println!("Error: {}", e);
+            println!("Publisher error: {} connecting to {}", e, addr);
         }
     }
 
     loop {
         if let Ok(msg) = vehicle.recv() {
-            // this gets a regular mavlink message
-            //println!("{:?}", msg);
+            if matches.is_present("debug") {
+                println!("{:?}", msg);
+            }
+
+            #[cfg(not(feature = "json"))]
             publisher.send(&msg.encode(), 0).unwrap(); // send &w with 0 flags
-            /*
-            // For JSON data
-            let stream = serde_json::to_string(&msg).unwrap();
-            println!("Sending msg = {}",stream);
-            publisher.send(stream.as_bytes(), 0).unwrap(); // send &w with 0 flags
-            */        }
+
+            #[cfg(feature = "json")]
+            {
+                // For JSON data
+                let stream = serde_json::to_string(&msg).unwrap();
+                println!("Sending msg = {}", stream);
+                publisher.send(stream.as_bytes(), 0).unwrap(); // send &w with 0 flags
+            }
+        }
     }
 }

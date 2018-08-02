@@ -1,0 +1,22 @@
+name: mavlink2proto
+version: "1.0"
+author: Michal Podhradsky <mpodhradsky@galois.com>
+about: Converts Mavlink messages to protobuf and vice versa
+args:
+    - MAVLINK_DEVICE:
+        help: Device to communicate over in the format of (tcp|udpin|udpout|serial):(ip|dev):(port|baud)
+        required: true
+        index: 1
+    - ADDR_SUB:
+        help: IP address of the SUBscriner
+        required: true
+        index: 2
+    - ADDR_PUB:
+        help: IP address of the PUBlisher
+        required: true
+        index: 3
+    - debug:
+        short: d
+        multiple: false
+        help: Emable debug prints
+

@@ -26,3 +26,8 @@ prost = "0.4"
 prost-derive = "0.4"
 bytes = "0.4"
 range_check = "0.1"
+clap = {version = "~2.27.0", features = ["yaml"]}
+
+[features]
+# TODO: not implemented yet
+json = []
