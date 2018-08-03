@@ -8,12 +8,13 @@ extern crate serde_json;
 
 use std::sync::Arc;
 use std::thread;
+use std::process::exit;
 
 use clap::App;
 
 use mavlink_proto::common::*;
 
-/// Run with for example `cargo run -- udpin:127.0.0.1:14540 tcp://127.0.0.1:4441 tcp://127.0.0.1:44440`
+/// Run with for example `cargo run -- udpin:127.0.0.1:14540 tcp://127.0.0.1:4441 tcp://127.0.0.1:4440`
 fn main() {
     // The YAML file is found relative to the current file, similar to how modules are found
     let yaml = load_yaml!("../../cli.yml");
