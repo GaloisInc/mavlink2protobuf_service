@@ -30,4 +30,4 @@ clap = {version = "~2.27.0", features = ["yaml"]}
 
 [features]
 # TODO: not implemented yet
-json = []
+"json" = []

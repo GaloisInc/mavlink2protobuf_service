@@ -1,4 +1,3 @@
-#![feature(extern_prelude)]
 extern crate prost;
 #[macro_use]
 extern crate prost_derive;
